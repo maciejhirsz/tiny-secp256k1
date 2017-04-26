@@ -1,11 +1,42 @@
-use core::ops::{Add, Sub, Shr};
+use core::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Shr, ShrAssign};
+use core::fmt::{self, Debug};
 use core::cmp::Ordering;
+use core::str;
+use naf::NAF;
 
-#[derive(Copy, Clone, Debug, Eq)]
+#[derive(Copy, Clone, Eq)]
 pub struct BigNum {
 	negative: bool,
 	len: usize,
-	words: [u32; 10]
+	words: [u32; 16]
+}
+
+impl Debug for BigNum {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		if self == 0 {
+			return f.write_str("0");
+		}
+
+		let digits = b"0123456789abcdef";
+		let mut buf = [b' '; 130];
+		let mut i = 129;
+
+		let mut n = *self;
+
+		while n != 0 {
+			buf[i] = digits[n.words[0] as usize & 0x0F];
+			n >>= 4;
+			i -= 1;
+		}
+
+		buf[i] = b'x';
+		i -= 1;
+		buf[i] = b'0';
+
+		f.write_str(
+			str::from_utf8(&buf[i..]).expect("contains only ASCII hex digits; qed")
+		)
+	}
 }
 
 impl PartialEq for BigNum {
@@ -34,9 +65,35 @@ impl Ord for BigNum {
 }
 
 impl PartialOrd for BigNum {
+	#[inline]
     fn partial_cmp(&self, other: &BigNum) -> Option<Ordering> {
         Some(self.cmp(other))
     }
+}
+
+impl PartialEq<u32> for BigNum {
+	#[inline]
+	fn eq(&self, other: &u32) -> bool {
+		self.len == 1 && self.words[0] == *other
+	}
+}
+
+impl<'a> PartialEq<u32> for &'a BigNum {
+	#[inline]
+	fn eq(&self, other: &u32) -> bool {
+		self.len == 1 && self.words[0] == *other
+	}
+}
+
+impl PartialOrd<u32> for BigNum {
+	#[inline]
+	fn partial_cmp(&self, other: &u32) -> Option<Ordering> {
+		if self.len > 1 {
+			return Some(Ordering::Greater);
+		}
+
+		Some(self.words[0].cmp(other))
+	}
 }
 
 impl Add for BigNum {
@@ -66,20 +123,20 @@ impl Add for BigNum {
 		};
 
 		let mut i = 0;
-		let mut carry = 0;
+		let mut carry = 0u64;
 
 		while i < b.len {
-			let word = a.words[i] + b.words[i] + carry;
-			self.words[i] = word & 0x03ffffff;
-			carry = word >> 26;
+			let word = a.words[i] as u64 + b.words[i] as u64 + carry;
+			self.words[i] = word as u32;
+			carry = word >> 32;
 
 			i += 1;
 		}
 
 		while carry != 0 && i < a.len {
-			let word = a.words[i] + carry;
-			self.words[i] = word & 0x03ffffff;
-			carry = word >> 26;
+			let word = a.words[i] as u64 + carry;
+			self.words[i] = word as u32;
+			carry = word >> 32;
 
 			i += 1;
 		}
@@ -88,13 +145,49 @@ impl Add for BigNum {
 
 		if carry != 0 {
 			// It's fine if this panics
-			self.words[self.len] = carry;
+			self.words[self.len] = carry as u32;
 			self.len += 1;
 		} else {
 			self.words[i..].copy_from_slice(&a.words[i..]);
 		}
 
 		self
+	}
+}
+
+impl AddAssign for BigNum {
+	fn add_assign(&mut self, rhs: BigNum) {
+		*self = *self + rhs;
+	}
+}
+
+impl Add<u32> for BigNum {
+	type Output = BigNum;
+
+	#[inline]
+	fn add(mut self, rhs: u32) -> Self {
+		self += rhs;
+		self
+	}
+}
+
+impl AddAssign<u32> for BigNum {
+	fn add_assign(&mut self, rhs: u32) {
+		let mut carry = rhs as u64;
+
+		for word in self.words_mut() {
+			carry += *word as u64;
+			*word = carry as u32;
+			carry >>= 32;
+
+			if carry == 0 {
+				return;
+			}
+		}
+
+		// overflowing, need to add a new word
+		self.words[self.len] = carry as u32;
+		self.len += 1;
 	}
 }
 
@@ -133,20 +226,20 @@ impl Sub for BigNum {
 		};
 
 		let mut i = 0;
-		let mut carry = 0;
+		let mut carry = 0i64;
 
 		while i < b.len {
-			let word = a.words[i] - b.words[i] + carry;
-			carry = word >> 26;
-			self.words[i] = word & 0x03ffffff;
+			let word = a.words[i] as i64 - b.words[i] as i64 + carry;
+			carry = word >> 32;
+			self.words[i] = word as u32;
 
 			i += 1;
 		}
 
-		while carry != 0 && i < a.len {
-			let word = a.words[i] + carry;
-			carry = word >> 26;
-			self.words[i] = word & 0x03ffffff;
+		if carry != 0 && i < a.len {
+			let word = a.words[i] as i64 + carry;
+			carry = word >> 32;
+			self.words[i] = word as u32;
 
 			i += 1;
 		}
@@ -166,31 +259,136 @@ impl Sub for BigNum {
 	}
 }
 
+impl SubAssign for BigNum {
+	fn sub_assign(&mut self, rhs: BigNum) {
+		*self = *self - rhs;
+	}
+}
+
+impl Mul for BigNum {
+	type Output = BigNum;
+
+	#[inline]
+	fn mul(mut self, mut rhs: BigNum) -> BigNum {
+		let mut res = BigNum {
+			negative: false,
+			words: [0; 16],
+			len: self.len + rhs.len - 1
+		};
+
+		let mut carry = self.words[0] as u64 * rhs.words[0] as u64;
+		res.words[0] = carry as u32;
+
+		carry >>= 32;
+
+		for k in 1..res.len {
+			let mut ncarry = carry >> 32;
+			let mut rword = carry as u32;
+
+			let j_low = if k > self.len { k - self.len + 1 } else { 0 };
+			let j_high = if rhs.len > k { k + 1 } else { rhs.len };
+
+			for j in j_low..j_high {
+				let i = k - j;
+				let a = self.words[i] as u64;
+				let b = rhs.words[j] as u64;
+				let r = a * b + rword as u64;
+				ncarry += r >> 32;
+				rword = r as u32;
+			}
+
+			res.words[k] = rword;
+			carry = ncarry;
+		}
+
+		if carry != 0 {
+			res.words[res.len] = carry as u32;
+			res.len += 1;
+		}
+
+		res.strip();
+		res
+	}
+}
+
+impl MulAssign for BigNum {
+	#[inline]
+	fn mul_assign(&mut self, rhs: BigNum) {
+		*self = *self * rhs;
+	}
+}
+
+impl Mul<u32> for BigNum {
+	type Output = BigNum;
+
+	#[inline]
+	fn mul(mut self, rhs: u32) -> BigNum {
+		self *= rhs;
+		self
+	}
+}
+
+impl MulAssign<u32> for BigNum {
+	fn mul_assign(&mut self, rhs: u32) {
+		let mut mul_carry = 0;
+		let mut carry = 0;
+
+		for word in self.words_mut() {
+			let tmp = *word as u64 * rhs as u64;
+			mul_carry = tmp >> 32;
+			carry += (tmp as u32) as u64;
+			*word = carry as u32;
+			carry = (carry >> 32) + mul_carry;
+		}
+
+		if carry != 0 {
+			self.words[self.len] = carry as u32;
+			self.len += 1;
+		}
+	}
+}
+
 impl Shr<u32> for BigNum {
 	type Output = BigNum;
 
+	#[inline]
 	fn shr(mut self, shift: u32) -> BigNum {
-		let mask = (1 << shift) - 1;
-		let m = 26 - shift;
+		self >>= shift;
+		self
+	}
+}
+
+impl ShrAssign<u32> for BigNum {
+	fn shr_assign(&mut self, shift: u32) {
 		let mut carry = 0;
+		let m = 32 - shift;
 
 		for word in self.words_mut().iter_mut().rev() {
-			let tmp = *word;
-			*word = (carry << m) | (*word >> shift);
-			carry = tmp & mask;
+			let tmp = *word as u64;
+			*word = (carry | (tmp >> shift)) as u32;
+			carry = tmp << m;
 		}
 
 		if self.len > 1 && self.words[self.len - 1] == 0 {
 			self.len -= 1;
 		}
-
-		self
 	}
 }
 
 #[inline]
 fn read_u32(buf: &[u8], offset: isize) -> u32 {
+	// Note: while this will work on all archs, WASM is _always_ little-endian
 	u32::from_be(unsafe { *(buf.as_ptr().offset(offset) as *const u32) })
+}
+
+#[inline]
+fn write_u32(val: u32, buf: &mut [u8]) {
+	assert!(buf.len() == 4);
+
+	unsafe {
+		let ptr = buf.as_mut_ptr() as *mut u32;
+		*ptr = u32::to_be(val);
+	}
 }
 
 impl<'a> From<&'a [u8]> for BigNum {
@@ -199,20 +397,17 @@ impl<'a> From<&'a [u8]> for BigNum {
 
 		let mut bn = BigNum {
 			negative: false,
-			len: 10,
+			len: 8,
 			words: [
-				read_u32(buf, 28) & 0x03ffffff,
-				(read_u32(buf, 25) & 0x0fffffff) >> 2,
-				(read_u32(buf, 22) & 0x3fffffff) >> 4,
-				read_u32(buf, 19) >> 6,
-
-				read_u32(buf, 15) & 0x03ffffff,
-				(read_u32(buf, 12) & 0x0fffffff) >> 2,
-				(read_u32(buf, 9) & 0x3fffffff) >> 4,
-				read_u32(buf, 6) >> 6,
-
-				read_u32(buf, 2) & 0x03ffffff,
-				(read_u32(buf, 0) & 0x00ffffff) >> 2
+				read_u32(buf, 28),
+				read_u32(buf, 24),
+				read_u32(buf, 20),
+				read_u32(buf, 16),
+				read_u32(buf, 12),
+				read_u32(buf, 8),
+				read_u32(buf, 4),
+				read_u32(buf, 0),
+				0, 0, 0, 0, 0, 0, 0, 0
 			]
 		};
 
@@ -223,15 +418,15 @@ impl<'a> From<&'a [u8]> for BigNum {
 }
 
 impl From<u32> for BigNum {
+	#[inline]
 	fn from(n: u32) -> Self {
-		let mut words = [0; 10];
-
-		words[0] = n & 0x03ffffff;
-
 		BigNum {
 			negative: false,
 			len: 1,
-			words: words
+			words: [
+				n, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0
+			]
 		}
 	}
 }
@@ -267,50 +462,265 @@ impl BigNum {
 	}
 
 	#[inline]
-	pub fn is_zero(&self) -> bool {
-		self.len == 1 && self.words[0] == 0
+	pub fn is_even(&self) -> bool {
+		self.words[0] & 1 == 0
+	}
+
+	#[inline]
+	pub fn is_odd(&self) -> bool {
+		self.words[0] & 1 == 1
+	}
+
+	pub fn split(mut self) -> (BigNum, BigNum) {
+		if self.len < 9 {
+			return (ZERO, self);
+		}
+
+		let mut high = BigNum {
+			negative: false,
+			words: [0; 16],
+			len: self.len - 8
+		};
+
+		high.words[0..8].copy_from_slice(&self.words[8..16]);
+		self.len = 8;
+
+		(high, self)
+	}
+
+	pub fn write_bytes_to(&self, buf: &mut [u8]) {
+		write_u32(self.words[0], &mut buf[28..32]);
+		write_u32(self.words[1], &mut buf[24..28]);
+		write_u32(self.words[2], &mut buf[20..24]);
+		write_u32(self.words[3], &mut buf[16..20]);
+		write_u32(self.words[4], &mut buf[12..16]);
+		write_u32(self.words[5], &mut buf[8..12]);
+		write_u32(self.words[6], &mut buf[4..8]);
+		write_u32(self.words[7], &mut buf[0..4]);
+	}
+
+	pub fn get_naf(&self, w: u8) -> NAF {
+		let mut naf = NAF::new();
+		let ws = 1i32 << (w + 1);
+		let wsm1 = ws - 1;
+		let ws2 = ws / 2;
+
+		let mut k = *self;
+
+		while k != 0 {
+			let zeros = k.words[0].trailing_zeros();
+
+			if zeros != 0 {
+				naf.push_zeros(zeros as usize);
+				k >>= zeros;
+				continue;
+			}
+
+			let m = (k.words[0] as i32) & wsm1;
+
+			if m > ws2 {
+				naf.push((ws2 - m) as i8);
+
+				k += (m - ws2) as u32;
+				k >>= 1;
+			} else {
+				naf.push(m as i8);
+				k.words[0] -= m as u32;
+
+				if k != 0 {
+					naf.push_zeros(w as usize - 1);
+					k >>= w as u32;
+				}
+			}
+		}
+
+		naf
+	}
+
+	#[inline]
+	pub fn red_neg(&self) -> BigNum {
+		if self == 0 {
+			ZERO
+		} else {
+			P - *self
+		}
+	}
+
+	#[inline]
+	pub fn red_add(&self, num: BigNum) -> BigNum {
+		let mut res = *self + num;
+
+		if res >= P {
+			res -= P
+		}
+
+		res
+	}
+
+	#[inline]
+	pub fn red_sub(&self, num: BigNum) -> BigNum {
+		let mut res = *self - num;
+
+		if res.negative {
+			res += P
+		}
+
+		res
+	}
+
+	#[inline]
+	pub fn red_mul(&self, num: BigNum) -> BigNum {
+		(*self * num).red_reduce()
+	}
+
+	pub fn red_invm(&self) -> BigNum {
+		let mut a = *self;
+		let mut b = P;
+
+		let mut x1 = ONE;
+		let mut x2 = ZERO;
+
+		while a > 1 && b > 1 {
+			let a_zeros = a.words[0].trailing_zeros();
+			if a_zeros != 0 {
+				a >>= a_zeros;
+				for _ in 0..a_zeros {
+					if x1.is_odd() {
+						x1 += P;
+					}
+					x1 >>= 1;
+				}
+			}
+
+			let b_zeros = b.words[0].trailing_zeros();
+			if b_zeros != 0 {
+				b >>= b_zeros;
+				for _ in 0..b_zeros {
+					if x2.is_odd() {
+						x2 += P;
+					}
+					x2 >>= 1;
+				}
+			}
+
+			if a >= b {
+				a -= b;
+				x1 -= x2;
+			} else {
+				b -= a;
+				x2 -= x1;
+			}
+		}
+
+		panic!("{:?} {:?}\n{:?}\n{:?}", a, b, x1, x2);
+
+		let mut res = if a == 1 { x1 } else { x2 };
+
+		if res.negative {
+			res += P;
+		}
+
+		if res.negative {
+			res.negative = false;
+			res.red_reduce().red_neg()
+		} else {
+			res.red_reduce()
+		}
+	}
+
+	#[inline]
+	pub fn red_sqr(&self) -> BigNum {
+		(*self * *self).red_reduce()
+	}
+
+	pub fn mul_k(&mut self) {
+		self.words[self.len] = 0;
+		self.words[self.len + 1] = 0;
+		self.len += 2;
+
+		let mut low = 0;
+
+		// k is 0x1000003d1 (does not fit into u32)
+		// by performing the extra addition of w
+		// we avoid potential math overflows
+
+		for word in self.words_mut() {
+			let w = *word as u64;
+			low += w * 0x3d1;
+			*word = low as u32;
+			low = w + (low >> 32); // w * 1 + (low >> 32)
+		}
+
+		self.strip();
+	}
+
+	pub fn red_reduce(mut self) -> BigNum {
+		let (mut high, low) = self.split();
+
+		high.mul_k();
+		self = high + low;
+
+		if self.len > 8 {
+			let (mut high, low) = self.split();
+
+			high.mul_k();
+			self = high + low;
+		}
+
+		match self.cmp(&P) {
+			Ordering::Equal => ZERO,
+			Ordering::Greater => self - P,
+			Ordering::Less => {
+				self.strip();
+				self
+			}
+		}
 	}
 }
 
 pub const ZERO: BigNum = BigNum {
 	negative: false,
 	len: 1,
-	words: [0; 10]
+	words: [0; 16]
+};
+
+pub const ONE: BigNum = BigNum {
+	negative: false,
+	len: 1,
+	words: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 };
 
 // FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 pub const N: BigNum = BigNum {
 	negative: false,
-	len: 10,
+	len: 8,
 	words: [
-		0x0364141,
-		0x097a334,
-		0x203bbfd,
-		0x39abd22,
-		0x2baaedc,
-		0x3ffffff,
-		0x3ffffff,
-		0x3ffffff,
-		0x3ffffff,
-		0x03fffff
+		0xd0364141,
+		0xbfd25e8c,
+		0xaf48a03b,
+		0xbaaedce6,
+		0xfffffffe,
+		0xffffffff,
+		0xffffffff,
+		0xffffffff,
+		0, 0, 0, 0, 0, 0, 0, 0
 	]
 };
 
 // 7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0
 pub const NH: BigNum = BigNum {
 	negative: false,
-	len: 10,
+	len: 8,
 	words: [
-		0x01b20a0,
-		0x24bd19a,
-		0x101ddfe,
-		0x1cd5e91,
-		0x35d576e,
-		0x3ffffff,
-		0x3ffffff,
-		0x3ffffff,
-		0x3ffffff,
-		0x01fffff
+		0x681b20a0,
+		0xdfe92f46,
+		0x57a4501d,
+		0x5d576e73,
+		0xffffffff,
+		0xffffffff,
+		0xffffffff,
+		0x7fffffff,
+		0, 0, 0, 0, 0, 0, 0, 0
 	]
 };
 
@@ -319,52 +729,49 @@ pub const NC: BigNum = BigNum {
 	negative: false,
 	len: 5,
 	words: [
-		0x3c9bebf,
-		0x3685ccb,
-		0x1fc4402,
-		0x06542dd,
-		0x1455123,
-		0,
-		0,
-		0,
-		0,
-		0
+		0x2fc9bebf,
+		0x402da173,
+		0x50b75fc4,
+		0x45512319,
+		0x00000001,
+		0x00000000,
+		0x00000000,
+		0x00000000,
+		0, 0, 0, 0, 0, 0, 0, 0
 	]
 };
 
 // FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
 pub const P: BigNum = BigNum {
 	negative: false,
-	len: 10,
+	len: 8,
 	words: [
-		0x3fffc2f,
-		0x3ffffbf,
-		0x3ffffff,
-		0x3ffffff,
-		0x3ffffff,
-		0x3ffffff,
-		0x3ffffff,
-		0x3ffffff,
-		0x3ffffff,
-		0x03fffff
+		0xfffffc2f,
+		0xfffffffe,
+		0xffffffff,
+		0xffffffff,
+		0xffffffff,
+		0xffffffff,
+		0xffffffff,
+		0xffffffff,
+		0, 0, 0, 0, 0, 0, 0, 0
 	]
 };
 
-// P - N = 14551231950b75fc4402da1722fc9baee,
+// P - N = 000000000000000000000000000000014551231950b75fc4402da1722fc9baee,
 pub const PSN: BigNum = BigNum {
 	negative: false,
 	len: 5,
 	words: [
-		0x3c9baee,
-		0x3685c8b,
-		0x1fc4402,
-		0x06542dd,
-		0x1455123,
-		0,
-		0,
-		0,
-		0,
-		0
+		0x2fc9baee,
+		0x402da172,
+		0x50b75fc4,
+		0x45512319,
+		0x00000001,
+		0x00000000,
+		0x00000000,
+		0x00000000,
+		0, 0, 0, 0, 0, 0, 0, 0
 	]
 };
 
@@ -375,11 +782,17 @@ mod tests {
 	#[test]
 	fn produces_valid_n() {
 		let bytes: &[u8] = &[
-			0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFE,
-			0xBA,0xAE,0xDC,0xE6,0xAF,0x48,0xA0,0x3B,0xBF,0xD2,0x5E,0x8C,0xD0,0x36,0x41,0x41,
+			0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+			0xFF,0xFF,0xFE,0xBA,0xAE,0xDC,0xE6,0xAF,0x48,0xA0,0x3B,0xBF,0xD2,
+			0x5E,0x8C,0xD0,0x36,0x41,0x41
 		];
 
-		assert_eq!(BigNum::from(bytes), N);
+		let mut roundtrip = [0u8; 32];
+		let bn = BigNum::from(bytes);
+		bn.write_bytes_to(&mut roundtrip);
+
+		assert_eq!(bn, N);
+		assert_eq!(bytes, roundtrip);
 	}
 
 	#[test]
@@ -392,21 +805,33 @@ mod tests {
 	#[test]
 	fn produces_valid_nc() {
 		let bytes: &[u8] = &[
-			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,
-			0x45,0x51,0x23,0x19,0x50,0xB7,0x5F,0xC4,0x40,0x2D,0xA1,0x73,0x2F,0xC9,0xBE,0xBF,
+			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+			0x00,0x00,0x01,0x45,0x51,0x23,0x19,0x50,0xB7,0x5F,0xC4,0x40,0x2D,
+			0xA1,0x73,0x2F,0xC9,0xBE,0xBF
 		];
 
-		assert_eq!(BigNum::from(bytes), NC);
+		let mut roundtrip = [0u8; 32];
+		let bn = BigNum::from(bytes);
+		bn.write_bytes_to(&mut roundtrip);
+
+		assert_eq!(bn, NC);
+		assert_eq!(bytes, roundtrip);
 	}
 
 	#[test]
 	fn produces_valid_p() {
 		let bytes: &[u8] = &[
-			0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-			0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFE,0xFF,0xFF,0xFC,0x2F,
+			0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+			0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+			0xFF,0xFE,0xFF,0xFF,0xFC,0x2F
 		];
 
-		assert_eq!(BigNum::from(bytes), P);
+		let mut roundtrip = [0u8; 32];
+		let bn = BigNum::from(bytes);
+		bn.write_bytes_to(&mut roundtrip);
+
+		assert_eq!(bn, P);
+		assert_eq!(bytes, roundtrip);
 	}
 
 	#[test]
@@ -417,9 +842,24 @@ mod tests {
 	}
 
 	#[test]
-	fn is_zero() {
-		assert_eq!(ZERO.is_zero(), true);
-		assert_eq!(N.is_zero(), false);
+	fn big_num_partial_eq_u32() {
+		assert!(ZERO == 0);
+		assert!(ONE == 1);
+		assert!(N != 0);
+		assert!(N != 1);
+	}
+
+	#[test]
+	fn big_num_partial_ord_u32() {
+		let five = BigNum::from(5);
+
+		assert!(five > 4);
+		assert!(five >= 4);
+		assert!(five >= 5);
+		assert!(five == 5);
+		assert!(five <= 5);
+		assert!(five <= 6);
+		assert!(five < 6);
 	}
 
 	#[test]
@@ -433,14 +873,144 @@ mod tests {
 	}
 
 	#[test]
+	fn multiply() {
+		let (high, low) = (N * NC).split();
+
+		let expected_bytes: &[u8] = &[
+			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+			0x00,0x00,0x01,0x45,0x51,0x23,0x19,0x50,0xB7,0x5F,0xC4,0x40,0x2D,
+			0xA1,0x73,0x2F,0xC9,0xBE,0xBD,0x62,0x98,0xE3,0x2A,0x7E,0x39,0x64,
+			0x3A,0x19,0x68,0x0A,0x1B,0xA4,0x32,0xF8,0x3A,0xD1,0x3C,0x8C,0x57,
+			0x42,0x3A,0x67,0x4B,0xB6,0xC0,0xAF,0x5E,0xC7,0xF1,0xED,0x7F
+		];
+
+		let mut buf = [0u8; 64];
+
+		low.write_bytes_to(&mut buf[32..]);
+		high.write_bytes_to(&mut buf[..32]);
+
+		assert_eq!(&buf[..], expected_bytes);
+	}
+
+	#[test]
+	fn mul_k() {
+		let mut n = NC;
+		n.mul_k();
+
+		let expected_bytes: &[u8] = &[
+			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x45,
+			0x51,0x27,0xf2,0xdb,0x5e,0x53,0x61,0x4c,0x02,0x1d,0x6c,0x1d,0xee,
+			0xe7,0x58,0x60,0xf0,0xf6,0xef
+		];
+
+		assert_eq!(n, BigNum::from(expected_bytes));
+	}
+
+	#[test]
+	fn red_reduce() {
+		let reduced = (N * NC).red_reduce();
+
+		let expected_bytes: &[u8] = &[
+			0x62,0x98,0xe3,0x2a,0x7e,0x39,0x64,0x3a,0x19,0x68,0x0a,0x1c,0xe9,
+			0x84,0x20,0x2d,0xac,0x9a,0xdf,0xb8,0x8e,0x3c,0x84,0xb7,0xd4,0xaf,
+			0x96,0xb5,0x28,0xe2,0xdc,0xcc
+		];
+
+		assert_eq!(reduced, BigNum::from(expected_bytes));
+	}
+
+	#[test]
+	fn red_neg() {
+		let n = NC.red_neg();
+
+		let expected_bytes: &[u8] = &[
+			0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+			0xff,0xff,0xfe,0xba,0xae,0xdc,0xe6,0xaf,0x48,0xa0,0x3b,0xbf,0xd2,
+			0x5e,0x8b,0xd0,0x36,0x3d,0x70
+		];
+
+		assert_eq!(n, BigNum::from(expected_bytes));
+	}
+
+	#[test]
+	fn red_invm() {
+		let n = NC.red_invm();
+
+		let expected_bytes: &[u8] = &[
+			0x47,0x83,0x3b,0x08,0x4c,0xa6,0x29,0x77,0xde,0xde,0x0f,0xd2,0xd9,
+			0x03,0xba,0x08,0x2d,0x2f,0x64,0x1f,0x84,0x5f,0x50,0x59,0xf7,0x16,
+			0xdf,0x89,0x80,0x6e,0x26,0xd1
+		];
+
+		assert_eq!(n, BigNum::from(expected_bytes));
+	}
+
+	#[test]
 	fn n_sub_one() {
 		let bn = N - BigNum::from(1);
 
 		let expected_bytes: &[u8] = &[
-			0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfe,
-			0xba,0xae,0xdc,0xe6,0xaf,0x48,0xa0,0x3b,0xbf,0xd2,0x5e,0x8c,0xd0,0x36,0x41,0x40,
+			0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+			0xff,0xff,0xfe,0xba,0xae,0xdc,0xe6,0xaf,0x48,0xa0,0x3b,0xbf,0xd2,
+			0x5e,0x8c,0xd0,0x36,0x41,0x40
 		];
 
 		assert_eq!(bn, BigNum::from(expected_bytes));
+	}
+
+	#[test]
+	fn n_naf() {
+		let expected_naf_1: &[i8] = &[
+			1,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0,0,-1,0,-1,0,0,1,0,0,0,0,0,1,0,-1,0,
+			1,0,-1,0,1,0,0,1,0,-1,0,0,0,-1,0,1,0,1,0,0,1,0,-1,0,0,0,0,0,0,0,-1,
+			0,0,0,-1,0,0,0,1,0,0,0,0,0,0,1,0,1,0,0,0,1,0,0,1,0,-1,0,0,0,-1,0,
+			-1,0,-1,0,0,1,0,-1,0,0,1,0,-1,0,0,-1,0,0,-1,0,0,0,-1,0,-1,0,-1,0,
+			-1,0,0,0,-1,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,1
+		];
+		let expected_naf_7: &[i8] = &[
+			65,0,0,0,0,0,0,0,65,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0,0,0,0,0,-77,-13,
+			77,0,0,0,0,0,0,0,0,-61,125,0,0,0,0,0,0,0,0,-105,41,0,0,0,0,0,0,0,0,
+			0,0,0,-111,-47,111,0,0,0,0,0,0,0,0,0,0,0,0,69,0,0,0,0,0,0,0,0,-61,
+			125,0,0,0,0,0,0,0,-77,13,0,0,0,0,0,0,0,-93,-29,-93,29,0,0,0,0,0,0,
+			0,0,-43,-107,43,0,0,0,0,0,0,0,-123,59,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1
+		];
+
+		assert_eq!(expected_naf_1, N.get_naf(1).as_slice());
+		assert_eq!(expected_naf_7, N.get_naf(7).as_slice());
+	}
+
+	#[test]
+	fn p_naf() {
+		let expected_naf_1: &[i8] = &[
+			-1,0,0,0,-1,0,1,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1
+		];
+		let expected_naf_7: &[i8] = &[
+			47,0,0,0,0,0,0,0,0,0,-127,63,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,-127,63,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1
+		];
+
+		assert_eq!(expected_naf_1, P.get_naf(1).as_slice());
+		assert_eq!(expected_naf_7, P.get_naf(7).as_slice());
 	}
 }
