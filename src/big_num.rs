@@ -18,20 +18,26 @@ impl Debug for BigNum {
 		}
 
 		let digits = b"0123456789abcdef";
-		let mut buf = [b' '; 130];
-		let mut i = 129;
+		let mut buf = [b' '; 131];
+		let mut i = buf.len();
 
 		let mut n = *self;
 
 		while n != 0 {
+			i -= 1;
 			buf[i] = digits[n.words[0] as usize & 0x0F];
 			n >>= 4;
-			i -= 1;
 		}
 
+		i -= 1;
 		buf[i] = b'x';
 		i -= 1;
 		buf[i] = b'0';
+
+		if n.negative {
+			i -= 1;
+			buf[i] = b'-';
+		}
 
 		f.write_str(
 			str::from_utf8(&buf[i..]).expect("contains only ASCII hex digits; qed")
@@ -236,7 +242,7 @@ impl Sub for BigNum {
 			i += 1;
 		}
 
-		if carry != 0 && i < a.len {
+		while carry != 0 && i < a.len {
 			let word = a.words[i] as i64 + carry;
 			carry = word >> 32;
 			self.words[i] = word as u32;
@@ -246,6 +252,7 @@ impl Sub for BigNum {
 
 		if carry == 0 && i < a.len {
 			self.words[i..].copy_from_slice(&a.words[i..]);
+			i = a.len;
 		}
 
 		if i > self.len {
@@ -376,9 +383,11 @@ impl ShrAssign<u32> for BigNum {
 }
 
 #[inline]
-fn read_u32(buf: &[u8], offset: isize) -> u32 {
+fn read_u32(buf: &[u8]) -> u32 {
+	assert!(buf.len() == 4);
+
 	// Note: while this will work on all archs, WASM is _always_ little-endian
-	u32::from_be(unsafe { *(buf.as_ptr().offset(offset) as *const u32) })
+	u32::from_be(unsafe { *(buf.as_ptr() as *const u32) })
 }
 
 #[inline]
@@ -393,20 +402,18 @@ fn write_u32(val: u32, buf: &mut [u8]) {
 
 impl<'a> From<&'a [u8]> for BigNum {
 	fn from(buf: &'a [u8]) -> Self {
-		assert!(buf.len() == 32);
-
 		let mut bn = BigNum {
 			negative: false,
-			len: 8,
+			len: buf.len() / 4,
 			words: [
-				read_u32(buf, 28),
-				read_u32(buf, 24),
-				read_u32(buf, 20),
-				read_u32(buf, 16),
-				read_u32(buf, 12),
-				read_u32(buf, 8),
-				read_u32(buf, 4),
-				read_u32(buf, 0),
+				read_u32(&buf[28..32]),
+				read_u32(&buf[24..28]),
+				read_u32(&buf[20..24]),
+				read_u32(&buf[16..20]),
+				read_u32(&buf[12..16]),
+				read_u32(&buf[8..12]),
+				read_u32(&buf[4..8]),
+				read_u32(&buf[0..4]),
 				0, 0, 0, 0, 0, 0, 0, 0
 			]
 		};
@@ -582,6 +589,7 @@ impl BigNum {
 
 		while a > 1 && b > 1 {
 			let a_zeros = a.words[0].trailing_zeros();
+
 			if a_zeros != 0 {
 				a >>= a_zeros;
 				for _ in 0..a_zeros {
@@ -611,8 +619,6 @@ impl BigNum {
 				x2 -= x1;
 			}
 		}
-
-		panic!("{:?} {:?}\n{:?}\n{:?}", a, b, x1, x2);
 
 		let mut res = if a == 1 { x1 } else { x2 };
 
@@ -778,6 +784,68 @@ pub const PSN: BigNum = BigNum {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn big_num_add_big_num() {
+		let n = NC + NC;
+
+		let mut nm = NC;
+		nm += NC;
+
+		let expected_bytes: &[u8] = &[
+			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+			0x00,0x00,0x02,0x8a,0xa2,0x46,0x32,0xa1,0x6e,0xbf,0x88,0x80,0x5b,
+			0x42,0xe6,0x5f,0x93,0x7d,0x7e
+		];
+
+		assert_eq!(n, BigNum::from(expected_bytes));
+		assert_eq!(nm, BigNum::from(expected_bytes));
+	}
+
+	#[test]
+	fn big_num_sub_big_num() {
+		let n = P - NC;
+
+		let expected_bytes: &[u8] = &[
+			0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+			0xff,0xff,0xfe,0xba,0xae,0xdc,0xe6,0xaf,0x48,0xa0,0x3b,0xbf,0xd2,
+			0x5e,0x8b,0xd0,0x36,0x3d,0x70
+		];
+
+		assert_eq!(n, BigNum::from(expected_bytes));
+	}
+
+	#[test]
+	fn big_num_sub_big_num_negative() {
+		let n = ONE - NC;
+
+		let expected_bytes: &[u8] = &[
+			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+			0x00,0x00,0x01,0x45,0x51,0x23,0x19,0x50,0xb7,0x5f,0xc4,0x40,0x2d,
+			0xa1,0x73,0x2f,0xc9,0xbe,0xbe,
+		];
+		let mut expected = BigNum::from(expected_bytes);
+		expected.negative = true;
+
+		assert_eq!(n, expected);
+	}
+
+	#[test]
+	fn big_num_shr() {
+		let n = NC >> 7;
+
+		let mut nm = NC;
+		nm >>= 7;
+
+		let expected_bytes: &[u8] = &[
+			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+			0x00,0x00,0x00,0x02,0x8a,0xa2,0x46,0x32,0xa1,0x6e,0xbf,0x88,0x80,
+			0x5b,0x42,0xe6,0x5f,0x93,0x7d
+		];
+
+		assert_eq!(n, BigNum::from(expected_bytes));
+		assert_eq!(nm, BigNum::from(expected_bytes));
+	}
 
 	#[test]
 	fn produces_valid_n() {
