@@ -1,10 +1,50 @@
 use big_num::{self, BigNum};
+use core::ops::{Add, AddAssign}; //, Sub, SubAssign, Mul, MulAssign, Shr, ShrAssign};
 
 #[derive(Clone, Copy, Debug)]
 pub struct ECPoint {
     pub x: BigNum,
     pub y: BigNum,
     pub inf: bool,
+}
+
+impl Add for ECPoint {
+    type Output = ECPoint;
+
+    fn add(self, rhs: ECPoint) -> ECPoint {
+        // O + P = P
+        if self.inf {
+            return rhs;
+        }
+
+        // P + O = P
+        if rhs.inf {
+            return self;
+        }
+
+        if self.x == rhs.x {
+            // P + P = 2P
+            if self.y == rhs.y {
+                return self.dbl();
+            }
+            // P + (-P) = O
+            return ECPoint::inf();
+        }
+
+        // s = (y - yp) / (x - xp)
+        // nx = s**2 - x - xp
+        // ny = s * (x - nx) - y
+        let mut s = self.y.red_sub(rhs.y);
+
+        if s != 0 {
+            s = s.red_mul(self.x.red_sub(rhs.x).red_invm())
+        }
+
+        let nx = s.red_sqr().red_sub(self.x).red_sub(rhs.x);
+        let ny = s.red_mul(self.x.red_sub(nx)).red_sub(self.y);
+
+        return ECPoint::new(nx, ny);
+    }
 }
 
 impl ECPoint {
