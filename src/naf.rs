@@ -1,4 +1,4 @@
-use ec_point::ECPoint;
+use ec_point::{ECPoint, INF};
 use core::mem;
 
 pub struct NAF {
@@ -32,13 +32,13 @@ impl NAF {
 }
 
 pub struct NAFPoints {
-    pub wnd: usize,
+    wnd: usize,
     points: [ECPoint; 127],
     len: usize
 }
 
 impl NAFPoints {
-    pub fn new(wnd: usize, init: ECPoint) {
+    pub fn new(wnd: usize, init: ECPoint) -> NAFPoints {
         let mut res = NAFPoints {
             wnd: wnd,
             points: unsafe { mem::uninitialized() },
@@ -46,5 +46,27 @@ impl NAFPoints {
         };
 
         res.points[0] = init;
+        let dbl = init.dbl();
+
+        for i in 1..res.len {
+            res.points[i] = res.points[i - 1] + dbl;
+        }
+
+        res
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[ECPoint] {
+        &self.points[..self.len]
+    }
+
+    #[inline]
+    pub fn wnd(&self) -> usize {
+        self.wnd
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.len
     }
 }

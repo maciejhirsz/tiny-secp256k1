@@ -5,8 +5,14 @@ use core::ops::{Add, AddAssign}; //, Sub, SubAssign, Mul, MulAssign, Shr, ShrAss
 pub struct ECPoint {
     pub x: BigNum,
     pub y: BigNum,
-    pub inf: bool,
+    pub inf: bool
 }
+
+pub const INF: ECPoint = ECPoint {
+    x: big_num::ZERO,
+    y: big_num::ZERO,
+    inf: true
+};
 
 impl Add for ECPoint {
     type Output = ECPoint;
@@ -28,7 +34,7 @@ impl Add for ECPoint {
                 return self.dbl();
             }
             // P + (-P) = O
-            return ECPoint::inf();
+            return INF;
         }
 
         // s = (y - yp) / (x - xp)
@@ -47,20 +53,18 @@ impl Add for ECPoint {
     }
 }
 
+impl AddAssign for ECPoint {
+    fn add_assign(&mut self, rhs: ECPoint) {
+        *self = *self + rhs;
+    }
+}
+
 impl ECPoint {
     pub fn new(x: BigNum, y: BigNum) -> Self {
         ECPoint {
             x: x,
             y: y,
             inf: false
-        }
-    }
-
-    pub fn inf() -> Self {
-        ECPoint {
-            x: big_num::ZERO,
-            y: big_num::ZERO,
-            inf: true
         }
     }
 
@@ -83,7 +87,7 @@ impl ECPoint {
         let yy = self.y.red_add(self.y);
 
         if yy == 0 {
-            return ECPoint::inf();
+            return INF;
         }
 
         let xsqr = self.x.red_sqr();
@@ -93,5 +97,14 @@ impl ECPoint {
         let ny = s.red_mul(self.x.red_sub(nx)).red_sub(self.y);
 
         ECPoint::new(nx, ny)
+    }
+
+    #[inline]
+    pub fn neg(&self) -> ECPoint {
+        if self.inf {
+            *self
+        } else {
+            ECPoint::new(self.x, self.y.red_neg())
+        }
     }
 }
