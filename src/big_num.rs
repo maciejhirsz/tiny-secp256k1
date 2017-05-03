@@ -102,14 +102,6 @@ impl PartialOrd<u32> for BigNum {
 	}
 }
 
-impl Add for BigNum {
-	type Output = BigNum;
-
-	fn add(mut self, rhs: BigNum) -> Self {
-		self.add(&rhs)
-	}
-}
-
 impl<'a> Add<&'a BigNum> for BigNum {
 	type Output = BigNum;
 
@@ -171,15 +163,8 @@ impl<'a> AddAssign<&'a BigNum> for BigNum {
 	}
 }
 
-impl AddAssign for BigNum {
-	fn add_assign(&mut self, rhs: BigNum) {
-		self.add_assign(&rhs);
-	}
-}
-
 impl Add<u32> for BigNum {
 	type Output = BigNum;
-
 
 	fn add(mut self, rhs: u32) -> Self {
 		self += rhs;
@@ -204,14 +189,6 @@ impl AddAssign<u32> for BigNum {
 		// overflowing, need to add a new word
 		self.words[self.len] = carry as u32;
 		self.len += 1;
-	}
-}
-
-impl Sub for BigNum {
-	type Output = BigNum;
-
-	fn sub(mut self, rhs: BigNum) -> Self {
-		self.sub(&rhs)
 	}
 }
 
@@ -286,37 +263,28 @@ impl<'a> SubAssign<&'a BigNum> for BigNum {
 	}
 }
 
-impl SubAssign for BigNum {
-	#[inline]
-	fn sub_assign(&mut self, rhs: BigNum) {
-		self.sub_assign(&rhs)
-	}
-}
-
-impl Mul for BigNum {
-	type Output = BigNum;
-
-	#[inline]
-	fn mul(self, rhs: BigNum) -> BigNum {
-		self.mul(&rhs)
-	}
-}
-
 impl<'a> Mul<&'a BigNum> for BigNum {
 	type Output = BigNum;
 
+	#[inline]
 	fn mul(mut self, rhs: &BigNum) -> BigNum {
+		self.mul_assign(rhs);
+		self
+	}
+}
+
+impl<'a> MulAssign<&'a BigNum> for BigNum {
+	fn mul_assign(&mut self, rhs: &BigNum) {
+		if self.len == 8 && rhs.len == 8 {
+			self.mul8x8(rhs);
+			return;
+		}
+
 		let mut res = BigNum {
 			negative: false,
 			words: [0; 16],
 			len: self.len + rhs.len - 1
 		};
-
-		if self.len == 8 && rhs.len == 8 {
-			self.mul8x8(rhs, &mut res);
-
-			return res;
-		}
 
 		let mut carry = self.words[0] as u64 * rhs.words[0] as u64;
 		res.words[0] = carry as u32;
@@ -349,19 +317,7 @@ impl<'a> Mul<&'a BigNum> for BigNum {
 		}
 
 		res.strip();
-		res
-	}
-}
-
-impl MulAssign for BigNum {
-	fn mul_assign(&mut self, rhs: BigNum) {
-		self.mul_assign(&rhs);
-	}
-}
-
-impl<'a> MulAssign<&'a BigNum> for BigNum{
-	fn mul_assign(&mut self, rhs: &BigNum) {
-		*self = *self * rhs;
+		*self = res;
 	}
 }
 
@@ -397,7 +353,7 @@ impl MulAssign<u32> for BigNum {
 impl Shr<u32> for BigNum {
 	type Output = BigNum;
 
-
+	#[inline]
 	fn shr(mut self, shift: u32) -> BigNum {
 		self >>= shift;
 		self
@@ -477,12 +433,12 @@ impl From<u32> for BigNum {
 }
 
 impl BigNum {
-	fn mul8x8(&self, rhs: &BigNum, out: &mut BigNum) {
-		let mut c = 0u64;
-		let mut lo: u64;
-		let mut mid: u64;
-		let mut hi: u64;
-		let mut word: u64;
+	fn mul8x8(&mut self, rhs: &BigNum) {
+		let mut c = 0;
+		let mut lo;
+		let mut mid;
+		let mut hi;
+		let mut word;
 		let al0 = self.words[0] & 0xffff;
 		let ah0 = self.words[0] >> 16;
 		let al1 = self.words[1] & 0xffff;
@@ -516,15 +472,15 @@ impl BigNum {
 		let bl7 = rhs.words[7] & 0xffff;
 		let bh7 = rhs.words[7] >> 16;
 
-		/* k = 0 */
+		// k = 0
 		lo = (al0 * bl0) as u64;
 		mid = (al0 * bh0) as u64;
 		mid += (ah0 * bl0) as u64;
 		hi = (ah0 * bh0) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[0] = word as u32;
-		/* k = 1 */
+		self.words[0] = word as u32;
+		// k = 1
 		lo = (al1 * bl0) as u64;
 		mid = (al1 * bh0) as u64;
 		mid += (ah1 * bl0) as u64;
@@ -535,8 +491,8 @@ impl BigNum {
 		hi += (ah0 * bh1) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[1] = word as u32;
-		/* k = 2 */
+		self.words[1] = word as u32;
+		// k = 2
 		lo = (al2 * bl0) as u64;
 		mid = (al2 * bh0) as u64;
 		mid += (ah2 * bl0) as u64;
@@ -551,8 +507,8 @@ impl BigNum {
 		hi += (ah0 * bh2) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[2] = word as u32;
-		/* k = 3 */
+		self.words[2] = word as u32;
+		// k = 3
 		lo = (al3 * bl0) as u64;
 		mid = (al3 * bh0) as u64;
 		mid += (ah3 * bl0) as u64;
@@ -571,8 +527,8 @@ impl BigNum {
 		hi += (ah0 * bh3) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[3] = word as u32;
-		/* k = 4 */
+		self.words[3] = word as u32;
+		// k = 4
 		lo = (al4 * bl0) as u64;
 		mid = (al4 * bh0) as u64;
 		mid += (ah4 * bl0) as u64;
@@ -595,8 +551,8 @@ impl BigNum {
 		hi += (ah0 * bh4) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[4] = word as u32;
-		/* k = 5 */
+		self.words[4] = word as u32;
+		// k = 5
 		lo = (al5 * bl0) as u64;
 		mid = (al5 * bh0) as u64;
 		mid += (ah5 * bl0) as u64;
@@ -623,8 +579,8 @@ impl BigNum {
 		hi += (ah0 * bh5) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[5] = word as u32;
-		/* k = 6 */
+		self.words[5] = word as u32;
+		// k = 6
 		lo = (al6 * bl0) as u64;
 		mid = (al6 * bh0) as u64;
 		mid += (ah6 * bl0) as u64;
@@ -655,8 +611,8 @@ impl BigNum {
 		hi += (ah0 * bh6) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[6] = word as u32;
-		/* k = 7 */
+		self.words[6] = word as u32;
+		// k = 7
 		lo = (al7 * bl0) as u64;
 		mid = (al7 * bh0) as u64;
 		mid += (ah7 * bl0) as u64;
@@ -691,8 +647,8 @@ impl BigNum {
 		hi += (ah0 * bh7) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[7] = word as u32;
-		/* k = 8 */
+		self.words[7] = word as u32;
+		// k = 8
 		lo = (al7 * bl1) as u64;
 		mid = (al7 * bh1) as u64;
 		mid += (ah7 * bl1) as u64;
@@ -723,8 +679,8 @@ impl BigNum {
 		hi += (ah1 * bh7) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[8] = word as u32;
-		/* k = 9 */
+		self.words[8] = word as u32;
+		// k = 9
 		lo = (al7 * bl2) as u64;
 		mid = (al7 * bh2) as u64;
 		mid += (ah7 * bl2) as u64;
@@ -751,8 +707,8 @@ impl BigNum {
 		hi += (ah2 * bh7) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[9] = word as u32;
-		/* k = 10 */
+		self.words[9] = word as u32;
+		// k = 10
 		lo = (al7 * bl3) as u64;
 		mid = (al7 * bh3) as u64;
 		mid += (ah7 * bl3) as u64;
@@ -775,8 +731,8 @@ impl BigNum {
 		hi += (ah3 * bh7) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[10] = word as u32;
-		/* k = 11 */
+		self.words[10] = word as u32;
+		// k = 11
 		lo = (al7 * bl4) as u64;
 		mid = (al7 * bh4) as u64;
 		mid += (ah7 * bl4) as u64;
@@ -795,8 +751,8 @@ impl BigNum {
 		hi += (ah4 * bh7) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[11] = word as u32;
-		/* k = 12 */
+		self.words[11] = word as u32;
+		// k = 12
 		lo = (al7 * bl5) as u64;
 		mid = (al7 * bh5) as u64;
 		mid += (ah7 * bl5) as u64;
@@ -811,8 +767,8 @@ impl BigNum {
 		hi += (ah5 * bh7) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[12] = word as u32;
-		/* k = 13 */
+		self.words[12] = word as u32;
+		// k = 13
 		lo = (al7 * bl6) as u64;
 		mid = (al7 * bh6) as u64;
 		mid += (ah7 * bl6) as u64;
@@ -823,18 +779,19 @@ impl BigNum {
 		hi += (ah6 * bh7) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[13] = word as u32;
-		/* k = 14 */
+		self.words[13] = word as u32;
+		// k = 14
 		lo = (al7 * bl7) as u64;
 		mid = (al7 * bh7) as u64;
 		mid += (ah7 * bl7) as u64;
 		hi = (ah7 * bh7) as u64;
 		word = c + lo + ((mid & 0xffff) << 16);
 		c = hi + (mid >> 16) + (word >> 32);
-		out.words[14] = word as u32;
+		self.words[14] = word as u32;
+		self.len = 15;
 		if c != 0 {
-			out.words[15] = c as u32;
-			out.len += 1;
+			self.words[15] = c as u32;
+			self.len = 16;
 		}
 	}
 
@@ -961,7 +918,7 @@ impl BigNum {
 		if self == 0 {
 			ZERO
 		} else {
-			*P - *self
+			*P - self
 		}
 	}
 
@@ -1013,6 +970,12 @@ impl BigNum {
 		self.red_reduce();
 	}
 
+	#[inline]
+	pub fn sqr(&mut self) {
+		let other = self as *mut BigNum as *const BigNum;
+		self.mul_assign(unsafe { &*other });
+	}
+
 	pub fn red_invm(&self) -> BigNum {
 		let mut a = *self;
 		let mut b = *P;
@@ -1045,11 +1008,11 @@ impl BigNum {
 			}
 
 			if a >= b {
-				a -= b;
-				x1 -= x2;
+				a -= &b;
+				x1 -= &x2;
 			} else {
-				b -= a;
-				x2 -= x1;
+				b -= &a;
+				x2 -= &x1;
 			}
 		}
 
@@ -1070,7 +1033,7 @@ impl BigNum {
 	}
 
 	pub fn red_sqr(&self) -> BigNum {
-		let mut res = *self * *self;
+		let mut res = *self * self;
 		res.red_reduce();
 		res
 	}
@@ -1100,13 +1063,13 @@ impl BigNum {
 		let mut high = self.split();
 
 		high.mul_k();
-		self.add_assign(high);
+		self.add_assign(&high);
 
 		if self.len > 8 {
 			let mut high = self.split();
 
 			high.mul_k();
-			self.add_assign(high);
+			self.add_assign(&high);
 		}
 
 		match (&*self).cmp(P) {
@@ -1220,10 +1183,10 @@ mod tests {
 
 	#[test]
 	fn big_num_add_big_num() {
-		let n = NC + NC;
+		let n = NC + &NC;
 
 		let mut nm = NC;
-		nm += NC;
+		nm += &NC;
 
 		let expected_bytes: &[u8] = &[
 			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -1237,7 +1200,7 @@ mod tests {
 
 	#[test]
 	fn big_num_sub_big_num() {
-		let n = *P - NC;
+		let n = *P - &NC;
 
 		let expected_bytes: &[u8] = &[
 			0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
@@ -1250,7 +1213,7 @@ mod tests {
 
 	#[test]
 	fn big_num_sub_big_num_negative() {
-		let n = ONE - NC;
+		let n = ONE - &NC;
 
 		let expected_bytes: &[u8] = &[
 			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -1337,7 +1300,7 @@ mod tests {
 
 	#[test]
 	fn produces_valid_psn() {
-		let psn = *P - N;
+		let psn = *P - &N;
 
 		assert_eq!(psn, PSN);
 	}
@@ -1365,8 +1328,8 @@ mod tests {
 
 	#[test]
 	fn is_overflow() {
-		let np1 = N + BigNum::from(1);
-		let ns1 = N - BigNum::from(1);
+		let np1 = N + &BigNum::from(1);
+		let ns1 = N - &BigNum::from(1);
 
 		assert_eq!(np1.is_overflow(), true);
 		assert_eq!(N.is_overflow(), true);
@@ -1375,7 +1338,7 @@ mod tests {
 
 	#[test]
 	fn multiply() {
-		let mut low = (N * NC);
+		let mut low = (N * &NC);
 		let high = low.split();
 
 		let expected_bytes: &[u8] = &[
@@ -1410,7 +1373,7 @@ mod tests {
 
 	#[test]
 	fn red_reduce() {
-		let mut reduced = (N * NC);
+		let mut reduced = (N * &NC);
 		reduced.red_reduce();
 
 		let expected_bytes: &[u8] = &[
@@ -1450,7 +1413,7 @@ mod tests {
 
 	#[test]
 	fn n_sub_one() {
-		let bn = N - BigNum::from(1);
+		let bn = N - &BigNum::from(1);
 
 		let expected_bytes: &[u8] = &[
 			0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,

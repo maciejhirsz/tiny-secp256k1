@@ -40,7 +40,8 @@ impl From<ECJPoint> for ECPoint {
 		let zinv = val.z.red_invm();
 		let zinv2 = zinv.red_sqr();
 		let ax = val.x.red_mul(&zinv2);
-		let ay = val.y.red_mul(&zinv2).red_mul(&zinv);
+		let mut ay = val.y.red_mul(&zinv2);
+		ay.red_mul_mut(&zinv);
 
 		ECPoint::new(ax, ay)
 	}
@@ -160,11 +161,9 @@ impl ECJPoint {
 		let v = u1.red_mul(&h2);
 		let h3 = h2.red_mul(&h);
 
-		let nx = r.red_sqr().red_add(&h3).red_sub(&v).red_sub(&v);
-		let ny = r.red_mul(&v.red_sub(&nx)).red_sub(&s1.red_mul(&h3));
-		let nz = self.z.red_mul(&h);
-
-		*self = ECJPoint::new(nx, ny, nz)
+		self.x = r.red_sqr().red_add(&h3).red_sub(&v).red_sub(&v);
+		self.y = r.red_mul(&v.red_sub(&self.x)).red_sub(&s1.red_mul(&h3));
+		self.z.red_mul_mut(&h);
 	}
 
 	pub fn double(&mut self) {
