@@ -248,68 +248,16 @@ impl AddAssign<u32> for BigNum {
 impl Sub for BigNum {
 	type Output = BigNum;
 
-	fn sub(mut self, mut rhs: BigNum) -> Self {
-		if self.negative != rhs.negative {
-			let mut res;
+	fn sub(mut self, rhs: BigNum) -> Self {
+		self.sub(&rhs)
+	}
+}
 
-			if self.negative {
-				self.negative = false;
-				res = self + rhs;
-				res.negative = true;
-			} else {
-				rhs.negative = false;
-				res = self + rhs;
-			}
+impl<'a> Sub<&'a BigNum> for BigNum {
+	type Output = BigNum;
 
-			res.norm_sign();
-
-			return res;
-		}
-
-		if self == rhs {
-			return ZERO;
-		}
-
-		let (a, b) = match self > rhs {
-			true => (self, rhs),
-			false => {
-				self.negative = !self.negative;
-
-				(rhs, self)
-			}
-		};
-
-		let mut i = 0;
-		let mut carry = 0i64;
-
-		while i < b.len {
-			let word = a.words[i] as i64 - b.words[i] as i64 + carry;
-			carry = word >> 32;
-			self.words[i] = word as u32;
-
-			i += 1;
-		}
-
-		while carry != 0 && i < a.len {
-			let word = a.words[i] as i64 + carry;
-			carry = word >> 32;
-			self.words[i] = word as u32;
-
-			i += 1;
-		}
-
-		if carry == 0 && i < a.len {
-			self.words[i..].copy_from_slice(&a.words[i..]);
-			i = a.len;
-		}
-
-		if i > self.len {
-			self.len = i;
-		}
-
-		self.strip();
-		self.norm_sign();
-
+	fn sub(mut self, rhs: &BigNum) -> Self {
+		self.sub_assign(rhs);
 		self
 	}
 }
