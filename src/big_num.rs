@@ -768,7 +768,7 @@ pub const NC: BigNum = BigNum {
 };
 
 // FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
-pub const P: BigNum = BigNum {
+pub static P: &'static BigNum = &BigNum {
 	negative: false,
 	len: 8,
 	words: [
