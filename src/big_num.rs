@@ -287,6 +287,7 @@ impl<'a> SubAssign<&'a BigNum> for BigNum {
 }
 
 impl SubAssign for BigNum {
+	#[inline]
 	fn sub_assign(&mut self, rhs: BigNum) {
 		self.sub_assign(&rhs)
 	}
@@ -295,8 +296,16 @@ impl SubAssign for BigNum {
 impl Mul for BigNum {
 	type Output = BigNum;
 
+	#[inline]
+	fn mul(self, rhs: BigNum) -> BigNum {
+		self.mul(&rhs)
+	}
+}
 
-	fn mul(mut self, mut rhs: BigNum) -> BigNum {
+impl<'a> Mul<&'a BigNum> for BigNum {
+	type Output = BigNum;
+
+	fn mul(mut self, rhs: &BigNum) -> BigNum {
 		let mut res = BigNum {
 			negative: false,
 			words: [0; 16],
@@ -339,8 +348,13 @@ impl Mul for BigNum {
 }
 
 impl MulAssign for BigNum {
-
 	fn mul_assign(&mut self, rhs: BigNum) {
+		self.mul_assign(&rhs);
+	}
+}
+
+impl<'a> MulAssign<&'a BigNum> for BigNum{
+	fn mul_assign(&mut self, rhs: &BigNum) {
 		*self = *self * rhs;
 	}
 }
@@ -495,9 +509,9 @@ impl BigNum {
 		self.words[0] & 1 == 1
 	}
 
-	pub fn split(mut self) -> (BigNum, BigNum) {
+	pub fn split(&mut self) -> BigNum {
 		if self.len < 9 {
-			return (ZERO, self);
+			return ZERO;
 		}
 
 		let mut high = BigNum {
@@ -509,7 +523,7 @@ impl BigNum {
 		high.words[0..8].copy_from_slice(&self.words[8..16]);
 		self.len = 8;
 
-		(high, self)
+		high
 	}
 
 	pub fn write_bytes_to(&self, buf: &mut [u8]) {
@@ -521,6 +535,22 @@ impl BigNum {
 		write_u32(self.words[5], &mut buf[8..12]);
 		write_u32(self.words[6], &mut buf[4..8]);
 		write_u32(self.words[7], &mut buf[0..4]);
+	}
+
+	pub fn double(&mut self) {
+		let mut i = 0;
+		let mut carry = 0u64;
+
+		for word in self.words_mut() {
+			let w = (*word as u64) * 2 + carry;
+			*word = w as u32;
+			carry = w >> 32;
+		}
+
+		if carry != 0 {
+			self.words[self.len] = carry as u32;
+			self.len += 1;
+		}
 	}
 
 	pub fn get_naf(&self, w: u8) -> NAF {
@@ -565,24 +595,32 @@ impl BigNum {
 		if self == 0 {
 			ZERO
 		} else {
-			P - *self
+			*P - *self
 		}
 	}
 
-	pub fn red_add(&self, num: BigNum) -> BigNum {
+	pub fn red_add(&self, num: &BigNum) -> BigNum {
 		let mut res = *self + num;
 
-		if res >= P {
+		if &res >= P {
 			res -= P
 		}
 
 		res
 	}
 
+	pub fn red_double(&mut self) {
+		self.double();
+
+		if &*self >= P {
+			self.sub_assign(P);
+		}
+	}
+
 	pub fn red_add_mut(&mut self, num: &BigNum) {
 		self.add_assign(num);
 
-		if &*self >= &P {
+		if &*self >= P {
 			self.sub_assign(P);
 		}
 	}
@@ -603,7 +641,7 @@ impl BigNum {
 
 	pub fn red_invm(&self) -> BigNum {
 		let mut a = *self;
-		let mut b = P;
+		let mut b = *P;
 
 		let mut x1 = ONE;
 		let mut x2 = ZERO;
@@ -681,19 +719,19 @@ impl BigNum {
 	}
 
 	pub fn red_reduce(mut self) -> BigNum {
-		let (mut high, low) = self.split();
+		let mut high = self.split();
 
 		high.mul_k();
-		self = high + low;
+		self += high;
 
 		if self.len > 8 {
-			let (mut high, low) = self.split();
+			let mut high = self.split();
 
 			high.mul_k();
-			self = high + low;
+			self += high;
 		}
 
-		match self.cmp(&P) {
+		match self.cmp(P) {
 			Ordering::Equal => ZERO,
 			Ordering::Greater => self - P,
 			Ordering::Less => {
@@ -824,7 +862,7 @@ mod tests {
 
 	#[test]
 	fn big_num_sub_big_num() {
-		let n = P - NC;
+		let n = *P - NC;
 
 		let expected_bytes: &[u8] = &[
 			0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
@@ -918,13 +956,13 @@ mod tests {
 		let bn = BigNum::from(bytes);
 		bn.write_bytes_to(&mut roundtrip);
 
-		assert_eq!(bn, P);
+		assert_eq!(&bn, P);
 		assert_eq!(bytes, roundtrip);
 	}
 
 	#[test]
 	fn produces_valid_psn() {
-		let psn = P - N;
+		let psn = *P - N;
 
 		assert_eq!(psn, PSN);
 	}
@@ -962,7 +1000,8 @@ mod tests {
 
 	#[test]
 	fn multiply() {
-		let (high, low) = (N * NC).split();
+		let mut low = (N * NC);
+		let high = low.split();
 
 		let expected_bytes: &[u8] = &[
 			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,

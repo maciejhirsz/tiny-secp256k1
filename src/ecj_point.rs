@@ -82,9 +82,9 @@ impl Add for ECJPoint {
 
   		let h2 = h.red_sqr();
   		let v = u1.red_mul(h2);
-  		let h3 = h2.red_add(h);
+  		let h3 = h2.red_add(&h);
 
-  		let nx = r.red_sqr().red_add(h3).red_sub(v).red_sub(v);
+  		let nx = r.red_sqr().red_add(&h3).red_sub(v).red_sub(v);
   		let ny = r.red_mul(v.red_sub(nx)).red_sub(s1.red_mul(h3));
   		let nz = self.z.red_mul(p.z).red_mul(h);
 
@@ -142,7 +142,7 @@ impl ECJPoint {
 		let v = u1.red_mul(h2);
 		let h3 = h2.red_mul(h);
 
-		let nx = r.red_sqr().red_add(h3).red_sub(v).red_sub(v);
+		let nx = r.red_sqr().red_add(&h3).red_sub(v).red_sub(v);
 		let ny = r.red_mul(v.red_sub(nx)).red_sub(s1.red_mul(h3));
 		let nz = self.z.red_mul(h);
 
@@ -164,37 +164,39 @@ impl ECJPoint {
 		    let xx = self.x.red_sqr();
 		    let yy = self.y.red_sqr();
 		    let yyyy = yy.red_sqr();
-		    let mut s = self.x.red_add(yy).red_sqr().red_sub(xx).red_sub(yyyy);
-		    s = s.red_add(s);
-		    let m = xx.red_add(xx).red_add(xx);
+		    let mut s = self.x.red_add(&yy).red_sqr().red_sub(xx).red_sub(yyyy);
+		    s.red_double();
+		    let m = xx.red_add(&xx).red_add(&xx);
 		    let t = m.red_sqr().red_sub(s).red_sub(s);
 
-		    let mut yyyy8 = yyyy.red_add(yyyy); // x2
-		    yyyy8 = yyyy8.red_add(yyyy8); // x4
-		    yyyy8 = yyyy8.red_add(yyyy8); // x8
+		    let mut yyyy8 = yyyy;
+		    yyyy8.red_double(); // x2
+		    yyyy8.red_double(); // x4
+		    yyyy8.red_double(); // x8
 
 		    nx = t;
 		    ny = m.red_mul(s.red_sub(t)).red_sub(yyyy8);
-		    nz = self.y.red_add(self.y);
+		    nz = self.y.red_add(&self.y);
 		} else {
 		    // http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#doubling-dbl-2009-l
     		// 2M + 5S + 6A + 3*2 + 1*3 + 1*8
     		let a = self.x.red_sqr();
     		let b = self.y.red_sqr();
     		let c = b.red_sqr();
-    		let mut d = self.x.red_add(b).red_sqr().red_sub(a).red_sub(c);
-    		d = d.red_add(d);
-    		let e = a.red_add(a).red_add(a);
+    		let mut d = self.x.red_add(&b).red_sqr().red_sub(a).red_sub(c);
+    		d.red_double();
+    		let e = a.red_add(&a).red_add(&a);
     		let f = e.red_sqr();
 
-    		let mut c8 = c.red_add(c); // x2
-    		c8 = c8.red_add(c8); // x4d.red
-    		c8 = c8.red_add(c8); // x8
+    		let mut c8 = c;
+    		c8.red_double(); // x2
+    		c8.red_double(); // x4
+    		c8.red_double(); // x8
 
     		nx = f.red_sub(d).red_sub(d);
     		ny = e.red_mul(d.red_sub(nx)).red_sub(c8);
     		nz = self.y.red_mul(self.z);
-    		nz = nz.red_add(nz);
+    		nz = nz.red_add(&nz);
 		}
 
 		ECJPoint::new(nx, ny, nz)

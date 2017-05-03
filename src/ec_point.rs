@@ -84,16 +84,16 @@ impl ECPoint {
             return *self;
         }
 
-        let yy = self.y.red_add(self.y);
+        let yy = self.y.red_add(&self.y);
 
         if yy == 0 {
             return INF;
         }
 
         let xsqr = self.x.red_sqr();
-        let s = xsqr.red_add(xsqr).red_add(xsqr).red_mul(yy.red_invm());
+        let s = xsqr.red_add(&xsqr).red_add(&xsqr).red_mul(yy.red_invm());
 
-        let nx = s.red_sqr().red_sub(self.x.red_add(self.x));
+        let nx = s.red_sqr().red_sub(self.x.red_add(&self.x));
         let ny = s.red_mul(self.x.red_sub(nx)).red_sub(self.y);
 
         ECPoint::new(nx, ny)
