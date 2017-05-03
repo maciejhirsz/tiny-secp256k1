@@ -99,7 +99,7 @@ impl ECPoint {
         ECPoint::new(nx, ny)
     }
 
-    #[inline]
+
     pub fn neg(&self) -> ECPoint {
         if self.inf {
             *self

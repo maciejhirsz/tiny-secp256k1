@@ -46,7 +46,7 @@ impl Debug for BigNum {
 }
 
 impl PartialEq for BigNum {
-	#[inline]
+
 	fn eq(&self, other: &BigNum) -> bool {
 		self.negative == other.negative && self.words() == other.words()
 	}
@@ -71,28 +71,28 @@ impl Ord for BigNum {
 }
 
 impl PartialOrd for BigNum {
-	#[inline]
+
     fn partial_cmp(&self, other: &BigNum) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl PartialEq<u32> for BigNum {
-	#[inline]
+
 	fn eq(&self, other: &u32) -> bool {
 		self.len == 1 && self.words[0] == *other
 	}
 }
 
 impl<'a> PartialEq<u32> for &'a BigNum {
-	#[inline]
+
 	fn eq(&self, other: &u32) -> bool {
 		self.len == 1 && self.words[0] == *other
 	}
 }
 
 impl PartialOrd<u32> for BigNum {
-	#[inline]
+
 	fn partial_cmp(&self, other: &u32) -> Option<Ordering> {
 		if self.len > 1 {
 			return Some(Ordering::Greater);
@@ -106,26 +106,83 @@ impl Add for BigNum {
 	type Output = BigNum;
 
 	fn add(mut self, mut rhs: BigNum) -> Self {
-		if self.negative != rhs.negative {
-			let mut res;
+		self += rhs;
+		self
+	}
+}
 
+impl<'a> AddAssign<&'a BigNum> for BigNum {
+	fn add_assign(&mut self, rhs: &BigNum) {
+		if self.negative != rhs.negative {
 			if self.negative {
 				self.negative = false;
-				res = self - rhs;
-				res.negative = !res.negative;
+				self.sub_assign(rhs);
+				self.negative = !self.negative;
 			} else {
-				rhs.negative = false;
-				res = self - rhs;
+				let mut flipped = *rhs;
+				flipped.negative = false;
+				self.sub_assign(&flipped);
 			}
 
-			res.norm_sign();
+			self.norm_sign();
 
-			return res;
+			return;
+		}
+
+		if rhs.len > self.len {
+			for i in self.len..rhs.len {
+				self.words[i] = 0;
+			}
+
+			self.len = rhs.len;
+		}
+
+		let mut i = 0;
+		let mut carry = 0u64;
+
+		while i < rhs.len {
+			let word = self.words[i] as u64 + rhs.words[i] as u64 + carry;
+			self.words[i] = word as u32;
+			carry = word >> 32;
+
+			i += 1;
+		}
+
+		while carry != 0 && i < self.len {
+			let word = self.words[i] as u64 + carry;
+			self.words[i] = word as u32;
+			carry = word >> 32;
+
+			i += 1;
+		}
+
+		if carry != 0 {
+			self.words[self.len] = carry as u32;
+			self.len += 1;
+		}
+	}
+}
+
+impl AddAssign for BigNum {
+	fn add_assign(&mut self, mut rhs: BigNum) {
+		if self.negative != rhs.negative {
+			if self.negative {
+				self.negative = false;
+				*self -= rhs;
+				self.negative = !self.negative;
+			} else {
+				rhs.negative = false;
+				*self -= rhs;
+			}
+
+			self.norm_sign();
+
+			return;
 		}
 
 		let (a, b) = match self.len > rhs.len {
-			true => (self, rhs),
-			false => (rhs, self)
+			true => (*self, rhs),
+			false => (rhs, *self)
 		};
 
 		let mut i = 0;
@@ -150,27 +207,18 @@ impl Add for BigNum {
 		self.len = a.len;
 
 		if carry != 0 {
-			// It's fine if this panics
 			self.words[self.len] = carry as u32;
 			self.len += 1;
 		} else {
 			self.words[i..].copy_from_slice(&a.words[i..]);
 		}
-
-		self
-	}
-}
-
-impl AddAssign for BigNum {
-	fn add_assign(&mut self, rhs: BigNum) {
-		*self = *self + rhs;
 	}
 }
 
 impl Add<u32> for BigNum {
 	type Output = BigNum;
 
-	#[inline]
+
 	fn add(mut self, rhs: u32) -> Self {
 		self += rhs;
 		self
@@ -266,16 +314,78 @@ impl Sub for BigNum {
 	}
 }
 
+impl<'a> SubAssign<&'a BigNum> for BigNum {
+	fn sub_assign(&mut self, rhs: &BigNum) {
+		if self.negative != rhs.negative {
+			if self.negative {
+				self.negative = false;
+				self.add_assign(rhs);
+				self.negative = true;
+			} else {
+				let mut flipped = *rhs;
+				flipped.negative = false;
+				self.add_assign(&flipped);
+			}
+
+			self.norm_sign();
+
+			return;
+		}
+
+		if &*self == rhs {
+			self.len = 1;
+			self.negative = false;
+			self.words[0] = 0;
+
+			return;
+		}
+
+		if rhs > self {
+			let tmp = *self;
+			*self = *rhs;
+			self.sub_assign(&tmp);
+			self.negative = true;
+			return;
+		}
+
+		let mut i = 0;
+		let mut carry = 0i64;
+
+		while i < rhs.len {
+			let word = self.words[i] as i64 - rhs.words[i] as i64 + carry;
+			carry = word >> 32;
+			self.words[i] = word as u32;
+
+			i += 1;
+		}
+
+		while carry != 0 && i < self.len {
+			let word = self.words[i] as i64 + carry;
+			carry = word >> 32;
+			self.words[i] = word as u32;
+
+			i += 1;
+		}
+
+		if i > self.len {
+			self.len = i;
+		}
+
+		self.strip();
+		self.norm_sign();
+	}
+}
+
 impl SubAssign for BigNum {
 	fn sub_assign(&mut self, rhs: BigNum) {
-		*self = *self - rhs;
+		self.sub_assign(&rhs)
 	}
 }
 
 impl Mul for BigNum {
 	type Output = BigNum;
 
-	#[inline]
+
 	fn mul(mut self, mut rhs: BigNum) -> BigNum {
 		let mut res = BigNum {
 			negative: false,
@@ -319,7 +429,7 @@ impl Mul for BigNum {
 }
 
 impl MulAssign for BigNum {
-	#[inline]
+
 	fn mul_assign(&mut self, rhs: BigNum) {
 		*self = *self * rhs;
 	}
@@ -328,7 +438,7 @@ impl MulAssign for BigNum {
 impl Mul<u32> for BigNum {
 	type Output = BigNum;
 
-	#[inline]
+
 	fn mul(mut self, rhs: u32) -> BigNum {
 		self *= rhs;
 		self
@@ -358,7 +468,7 @@ impl MulAssign<u32> for BigNum {
 impl Shr<u32> for BigNum {
 	type Output = BigNum;
 
-	#[inline]
+
 	fn shr(mut self, shift: u32) -> BigNum {
 		self >>= shift;
 		self
@@ -382,7 +492,7 @@ impl ShrAssign<u32> for BigNum {
 	}
 }
 
-#[inline]
+
 fn read_u32(buf: &[u8]) -> u32 {
 	assert!(buf.len() == 4);
 
@@ -390,7 +500,7 @@ fn read_u32(buf: &[u8]) -> u32 {
 	u32::from_be(unsafe { *(buf.as_ptr() as *const u32) })
 }
 
-#[inline]
+
 fn write_u32(val: u32, buf: &mut [u8]) {
 	assert!(buf.len() == 4);
 
@@ -425,7 +535,6 @@ impl<'a> From<&'a [u8]> for BigNum {
 }
 
 impl From<u32> for BigNum {
-	#[inline]
 	fn from(n: u32) -> Self {
 		BigNum {
 			negative: false,
@@ -439,41 +548,39 @@ impl From<u32> for BigNum {
 }
 
 impl BigNum {
-	#[inline]
 	fn strip(&mut self) {
 		while self.len > 1 && self.words[self.len - 1] == 0 {
 			self.len -= 1;
 		}
 	}
 
-	#[inline]
 	fn words(&self) -> &[u32] {
 		&self.words[..self.len]
 	}
 
-	#[inline]
+
 	fn words_mut(&mut self) -> &mut [u32] {
 		&mut self.words[..self.len]
 	}
 
-	#[inline]
+
 	fn norm_sign(&mut self) {
 		if self.len == 0 && self.words[0] == 0 {
 			self.negative = false;
 		}
 	}
 
-	#[inline]
+
 	pub fn is_overflow(&self) -> bool {
 		self >= &N
 	}
 
-	#[inline]
+
 	pub fn is_even(&self) -> bool {
 		self.words[0] & 1 == 0
 	}
 
-	#[inline]
+
 	pub fn is_odd(&self) -> bool {
 		self.words[0] & 1 == 1
 	}
@@ -544,7 +651,6 @@ impl BigNum {
 		naf
 	}
 
-	#[inline]
 	pub fn red_neg(&self) -> BigNum {
 		if self == 0 {
 			ZERO
@@ -553,7 +659,6 @@ impl BigNum {
 		}
 	}
 
-	#[inline]
 	pub fn red_add(&self, num: BigNum) -> BigNum {
 		let mut res = *self + num;
 
@@ -564,7 +669,14 @@ impl BigNum {
 		res
 	}
 
-	#[inline]
+	pub fn red_add_mut(&mut self, num: &BigNum) {
+		self.add_assign(num);
+
+		if &*self >= &P {
+			self.sub_assign(P);
+		}
+	}
+
 	pub fn red_sub(&self, num: BigNum) -> BigNum {
 		let mut res = *self - num;
 
@@ -575,7 +687,6 @@ impl BigNum {
 		res
 	}
 
-	#[inline]
 	pub fn red_mul(&self, num: BigNum) -> BigNum {
 		(*self * num).red_reduce()
 	}
@@ -634,7 +745,6 @@ impl BigNum {
 		}
 	}
 
-	#[inline]
 	pub fn red_sqr(&self) -> BigNum {
 		(*self * *self).red_reduce()
 	}

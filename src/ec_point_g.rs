@@ -92,7 +92,6 @@ impl ECPointG {
             i -= 1;
         }
 
-
         a.into()
     }
 }

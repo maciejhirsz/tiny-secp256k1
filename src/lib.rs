@@ -20,14 +20,14 @@ pub fn is_valid_secret(bytes: &[u8]) -> bool {
     !num.is_overflow() && num != 0
 }
 
-pub fn create_public_key(g: &ECPointG, secret: &[u8]) -> [u8; 65] {
+pub fn create_public_key(g: &ECPointG, secret: &[u8]) -> Option<[u8; 65]> {
     let num = BigNum::from(secret);
 
     if num.is_overflow() || num == 0 {
-        return [0; 65];
+        return None;
     }
 
-    g.mul(num).to_public_key()
+    Some(g.mul(num).to_public_key())
 }
 
 #[cfg(test)]
@@ -52,7 +52,7 @@ mod tests {
 
         let g = ECPointG::new();
 
-        let key = super::create_public_key(&g, secret);
+        let key = super::create_public_key(&g, secret).unwrap();
 
         assert_eq!(&key[..], expected);
     }
