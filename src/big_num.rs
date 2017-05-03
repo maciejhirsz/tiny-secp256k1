@@ -105,8 +105,16 @@ impl PartialOrd<u32> for BigNum {
 impl Add for BigNum {
 	type Output = BigNum;
 
-	fn add(mut self, mut rhs: BigNum) -> Self {
-		self += rhs;
+	fn add(mut self, rhs: BigNum) -> Self {
+		self.add(&rhs)
+	}
+}
+
+impl<'a> Add<&'a BigNum> for BigNum {
+	type Output = BigNum;
+
+	fn add(mut self, rhs: &BigNum) -> Self {
+		self.add_assign(rhs);
 		self
 	}
 }
@@ -164,54 +172,8 @@ impl<'a> AddAssign<&'a BigNum> for BigNum {
 }
 
 impl AddAssign for BigNum {
-	fn add_assign(&mut self, mut rhs: BigNum) {
-		if self.negative != rhs.negative {
-			if self.negative {
-				self.negative = false;
-				*self -= rhs;
-				self.negative = !self.negative;
-			} else {
-				rhs.negative = false;
-				*self -= rhs;
-			}
-
-			self.norm_sign();
-
-			return;
-		}
-
-		let (a, b) = match self.len > rhs.len {
-			true => (*self, rhs),
-			false => (rhs, *self)
-		};
-
-		let mut i = 0;
-		let mut carry = 0u64;
-
-		while i < b.len {
-			let word = a.words[i] as u64 + b.words[i] as u64 + carry;
-			self.words[i] = word as u32;
-			carry = word >> 32;
-
-			i += 1;
-		}
-
-		while carry != 0 && i < a.len {
-			let word = a.words[i] as u64 + carry;
-			self.words[i] = word as u32;
-			carry = word >> 32;
-
-			i += 1;
-		}
-
-		self.len = a.len;
-
-		if carry != 0 {
-			self.words[self.len] = carry as u32;
-			self.len += 1;
-		} else {
-			self.words[i..].copy_from_slice(&a.words[i..]);
-		}
+	fn add_assign(&mut self, rhs: BigNum) {
+		self.add_assign(&rhs);
 	}
 }
 
