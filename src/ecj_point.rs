@@ -39,8 +39,8 @@ impl From<ECJPoint> for ECPoint {
 
 		let zinv = val.z.red_invm();
 		let zinv2 = zinv.red_sqr();
-		let ax = val.x.red_mul(zinv2);
-		let ay = val.y.red_mul(zinv2).red_mul(zinv);
+		let ax = val.x.red_mul(&zinv2);
+		let ay = val.y.red_mul(&zinv2).red_mul(&zinv);
 
 		ECPoint::new(ax, ay)
 	}
@@ -49,52 +49,64 @@ impl From<ECJPoint> for ECPoint {
 impl Add for ECJPoint {
 	type Output = ECJPoint;
 
-	fn add(self, p: ECJPoint) -> ECJPoint {
+	#[inline]
+	fn add(mut self, p: ECJPoint) -> ECJPoint {
+		self.add_assign(p);
+		self
+	}
+}
+
+impl AddAssign for ECJPoint {
+	#[inline]
+	fn add_assign(&mut self, rhs: ECJPoint) {
+		self.add_assign(&rhs);
+	}
+}
+
+impl<'a> AddAssign<&'a ECJPoint> for ECJPoint {
+	fn add_assign(&mut self, p: &ECJPoint) {
 		// O + P = P
 		if self.inf() {
-			return p;
+			*self = *p;
+			return;
 		}
 
 		// P + O = P;
 		if p.inf() {
-			return self;
+			return;
 		}
 
 	  	// http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-add-1998-cmo-2
   		// 12M + 4S + 7A
   		let pz2 = p.z.red_sqr();
   		let z2 = self.z.red_sqr();
-  		let u1 = self.x.red_mul(pz2);
-  		let u2 = p.x.red_mul(z2);
-  		let s1 = self.y.red_mul(pz2).red_mul(p.z);
-  		let s2 = p.y.red_mul(z2).red_mul(self.z);
+  		let u1 = self.x.red_mul(&pz2);
+  		let u2 = p.x.red_mul(&z2);
+  		let mut s1 = self.y.red_mul(&pz2);
+  		s1.red_mul_mut(&p.z);
+  		let mut s2 = p.y.red_mul(&z2);
+  		s2.red_mul_mut(&self.z);
 
-  		let h = u1.red_sub(u2);
-  		let r = s1.red_sub(s2);
+  		let h = u1.red_sub(&u2);
+  		let r = s1.red_sub(&s2);
 
   		if h == 0 {
   			if r == 0 {
-  				return self.dbl();
+  				self.double();
+  				return;
   			}
 
-  			return ECJPoint::default();
+  			*self = ECJPoint::default();
+  			return;
   		}
 
   		let h2 = h.red_sqr();
-  		let v = u1.red_mul(h2);
+  		let v = u1.red_mul(&h2);
   		let h3 = h2.red_add(&h);
 
-  		let nx = r.red_sqr().red_add(&h3).red_sub(v).red_sub(v);
-  		let ny = r.red_mul(v.red_sub(nx)).red_sub(s1.red_mul(h3));
-  		let nz = self.z.red_mul(p.z).red_mul(h);
-
-  		ECJPoint::new(nx, ny, nz)
-	}
-}
-
-impl AddAssign for ECJPoint {
-	fn add_assign(&mut self, rhs: ECJPoint) {
-		*self = *self + rhs;
+  		self.x = r.red_sqr().red_add(&h3).red_sub(&v).red_sub(&v);
+  		self.y = r.red_mul(&v.red_sub(&self.x)).red_sub(&s1.red_mul(&h3));
+  		self.z = self.z.red_mul(&p.z).red_mul(&h);
 	}
 }
 
@@ -108,15 +120,16 @@ impl ECJPoint {
 		}
 	}
 
-	pub fn mixed_add(&self, p: ECPoint) -> ECJPoint {
+	pub fn mixed_add(&mut self, p: &ECPoint) {
 		// O + P = P
 		if self.inf() {
-			return p.into();
+			*self = p.clone().into();
+			return;
 		}
 
 		// P + O = P
 		if p.inf {
-			return *self;
+			return;
 		}
 
 		// http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-add-1998-cmo-2
@@ -124,34 +137,39 @@ impl ECJPoint {
 		// 8M + 3S + 7A
 		let z2 = self.z.red_sqr();
 		let u1 = self.x;
-		let u2 = p.x.red_mul(z2);
+		let mut u2 = p.x;
+		u2.red_mul_mut(&z2);
 		let s1 = self.y;
-		let s2 = p.y.red_mul(z2).red_mul(self.z);
+		let mut s2 = p.y;
+		s2.red_mul_mut(&z2);
+		s2.red_mul_mut(&self.z);
 
-		let h = u1.red_sub(u2);
-		let r = s1.red_sub(s2);
+		let h = u1.red_sub(&u2);
+		let r = s1.red_sub(&s2);
 
 		if h == 0 {
 			if r == 0 {
-				return self.dbl();
+				self.double();
+				return;
 			}
-			return ECJPoint::default();
+			*self = ECJPoint::default();
+			return;
 		}
 
 		let h2 = h.red_sqr();
-		let v = u1.red_mul(h2);
-		let h3 = h2.red_mul(h);
+		let v = u1.red_mul(&h2);
+		let h3 = h2.red_mul(&h);
 
-		let nx = r.red_sqr().red_add(&h3).red_sub(v).red_sub(v);
-		let ny = r.red_mul(v.red_sub(nx)).red_sub(s1.red_mul(h3));
-		let nz = self.z.red_mul(h);
+		let nx = r.red_sqr().red_add(&h3).red_sub(&v).red_sub(&v);
+		let ny = r.red_mul(&v.red_sub(&nx)).red_sub(&s1.red_mul(&h3));
+		let nz = self.z.red_mul(&h);
 
-		ECJPoint::new(nx, ny, nz)
+		*self = ECJPoint::new(nx, ny, nz)
 	}
 
-	pub fn dbl(&self) -> ECJPoint {
+	pub fn double(&mut self) {
 		if self.inf() {
-			return *self;
+			return;
 		}
 
 		let nx;
@@ -164,10 +182,10 @@ impl ECJPoint {
 		    let xx = self.x.red_sqr();
 		    let yy = self.y.red_sqr();
 		    let yyyy = yy.red_sqr();
-		    let mut s = self.x.red_add(&yy).red_sqr().red_sub(xx).red_sub(yyyy);
+		    let mut s = self.x.red_add(&yy).red_sqr().red_sub(&xx).red_sub(&yyyy);
 		    s.red_double();
 		    let m = xx.red_add(&xx).red_add(&xx);
-		    let t = m.red_sqr().red_sub(s).red_sub(s);
+		    let t = m.red_sqr().red_sub(&s).red_sub(&s);
 
 		    let mut yyyy8 = yyyy;
 		    yyyy8.red_double(); // x2
@@ -175,7 +193,7 @@ impl ECJPoint {
 		    yyyy8.red_double(); // x8
 
 		    nx = t;
-		    ny = m.red_mul(s.red_sub(t)).red_sub(yyyy8);
+		    ny = m.red_mul(&s.red_sub(&t)).red_sub(&yyyy8);
 		    nz = self.y.red_add(&self.y);
 		} else {
 		    // http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#doubling-dbl-2009-l
@@ -183,7 +201,7 @@ impl ECJPoint {
     		let a = self.x.red_sqr();
     		let b = self.y.red_sqr();
     		let c = b.red_sqr();
-    		let mut d = self.x.red_add(&b).red_sqr().red_sub(a).red_sub(c);
+    		let mut d = self.x.red_add(&b).red_sqr().red_sub(&a).red_sub(&c);
     		d.red_double();
     		let e = a.red_add(&a).red_add(&a);
     		let f = e.red_sqr();
@@ -193,13 +211,15 @@ impl ECJPoint {
     		c8.red_double(); // x4
     		c8.red_double(); // x8
 
-    		nx = f.red_sub(d).red_sub(d);
-    		ny = e.red_mul(d.red_sub(nx)).red_sub(c8);
-    		nz = self.y.red_mul(self.z);
+    		nx = f.red_sub(&d).red_sub(&d);
+    		ny = e.red_mul(&d.red_sub(&nx)).red_sub(&c8);
+    		nz = self.y.red_mul(&self.z);
     		nz = nz.red_add(&nz);
 		}
 
-		ECJPoint::new(nx, ny, nz)
+		self.x = nx;
+		self.y = ny;
+		self.z = nz;
 	}
 
 	#[inline]
@@ -214,7 +234,7 @@ mod tests {
 
 	#[test]
 	fn ecj_point_mixed_add() {
-		let ecj = ECJPoint::default();
+		let mut ecj = ECJPoint::default();
 
 		let x: &[u8] = &[
 			0x79,0xbe,0x66,0x7e,0xf9,0xdc,0xbb,0xac,0x55,0xa0,0x62,0x95,0xce,
@@ -231,6 +251,7 @@ mod tests {
 		let expected = ECJPoint::new(x.into(), y.into(), 1u32.into());
 
 		assert_eq!(ecj.inf(), true);
-		assert_eq!(ecj.mixed_add(ecpoint), expected);
+		ecj.mixed_add(&ecpoint);
+		assert_eq!(ecj, expected);
 	}
 }

@@ -27,7 +27,7 @@ pub fn create_public_key(g: &ECPointG, secret: &[u8]) -> Option<[u8; 65]> {
         return None;
     }
 
-    Some(g.mul(num).to_public_key())
+    Some(g.mul(&num).to_public_key())
 }
 
 #[cfg(test)]

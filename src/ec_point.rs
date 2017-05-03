@@ -40,14 +40,14 @@ impl Add for ECPoint {
         // s = (y - yp) / (x - xp)
         // nx = s**2 - x - xp
         // ny = s * (x - nx) - y
-        let mut s = self.y.red_sub(rhs.y);
+        let mut s = self.y.red_sub(&rhs.y);
 
         if s != 0 {
-            s = s.red_mul(self.x.red_sub(rhs.x).red_invm())
+            s = s.red_mul(&self.x.red_sub(&rhs.x).red_invm())
         }
 
-        let nx = s.red_sqr().red_sub(self.x).red_sub(rhs.x);
-        let ny = s.red_mul(self.x.red_sub(nx)).red_sub(self.y);
+        let nx = s.red_sqr().red_sub(&self.x).red_sub(&rhs.x);
+        let ny = s.red_mul(&self.x.red_sub(&nx)).red_sub(&self.y);
 
         return ECPoint::new(nx, ny);
     }
@@ -91,10 +91,10 @@ impl ECPoint {
         }
 
         let xsqr = self.x.red_sqr();
-        let s = xsqr.red_add(&xsqr).red_add(&xsqr).red_mul(yy.red_invm());
+        let s = xsqr.red_add(&xsqr).red_add(&xsqr).red_mul(&yy.red_invm());
 
-        let nx = s.red_sqr().red_sub(self.x.red_add(&self.x));
-        let ny = s.red_mul(self.x.red_sub(nx)).red_sub(self.y);
+        let nx = s.red_sqr().red_sub(&self.x.red_add(&self.x));
+        let ny = s.red_mul(&self.x.red_sub(&nx)).red_sub(&self.y);
 
         ECPoint::new(nx, ny)
     }

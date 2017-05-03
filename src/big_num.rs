@@ -72,9 +72,9 @@ impl Ord for BigNum {
 
 impl PartialOrd for BigNum {
 
-    fn partial_cmp(&self, other: &BigNum) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+	fn partial_cmp(&self, other: &BigNum) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
 }
 
 impl PartialEq<u32> for BigNum {
@@ -312,6 +312,12 @@ impl<'a> Mul<&'a BigNum> for BigNum {
 			len: self.len + rhs.len - 1
 		};
 
+		if self.len == 8 && rhs.len == 8 {
+			self.mul8x8(rhs, &mut res);
+
+			return res;
+		}
+
 		let mut carry = self.words[0] as u64 * rhs.words[0] as u64;
 		res.words[0] = carry as u32;
 
@@ -361,7 +367,6 @@ impl<'a> MulAssign<&'a BigNum> for BigNum{
 
 impl Mul<u32> for BigNum {
 	type Output = BigNum;
-
 
 	fn mul(mut self, rhs: u32) -> BigNum {
 		self *= rhs;
@@ -472,6 +477,367 @@ impl From<u32> for BigNum {
 }
 
 impl BigNum {
+	fn mul8x8(&self, rhs: &BigNum, out: &mut BigNum) {
+		let mut c = 0u64;
+		let mut lo: u64;
+		let mut mid: u64;
+		let mut hi: u64;
+		let mut word: u64;
+		let al0 = self.words[0] & 0xffff;
+		let ah0 = self.words[0] >> 16;
+		let al1 = self.words[1] & 0xffff;
+		let ah1 = self.words[1] >> 16;
+		let al2 = self.words[2] & 0xffff;
+		let ah2 = self.words[2] >> 16;
+		let al3 = self.words[3] & 0xffff;
+		let ah3 = self.words[3] >> 16;
+		let al4 = self.words[4] & 0xffff;
+		let ah4 = self.words[4] >> 16;
+		let al5 = self.words[5] & 0xffff;
+		let ah5 = self.words[5] >> 16;
+		let al6 = self.words[6] & 0xffff;
+		let ah6 = self.words[6] >> 16;
+		let al7 = self.words[7] & 0xffff;
+		let ah7 = self.words[7] >> 16;
+		let bl0 = rhs.words[0] & 0xffff;
+		let bh0 = rhs.words[0] >> 16;
+		let bl1 = rhs.words[1] & 0xffff;
+		let bh1 = rhs.words[1] >> 16;
+		let bl2 = rhs.words[2] & 0xffff;
+		let bh2 = rhs.words[2] >> 16;
+		let bl3 = rhs.words[3] & 0xffff;
+		let bh3 = rhs.words[3] >> 16;
+		let bl4 = rhs.words[4] & 0xffff;
+		let bh4 = rhs.words[4] >> 16;
+		let bl5 = rhs.words[5] & 0xffff;
+		let bh5 = rhs.words[5] >> 16;
+		let bl6 = rhs.words[6] & 0xffff;
+		let bh6 = rhs.words[6] >> 16;
+		let bl7 = rhs.words[7] & 0xffff;
+		let bh7 = rhs.words[7] >> 16;
+
+		/* k = 0 */
+		lo = (al0 * bl0) as u64;
+		mid = (al0 * bh0) as u64;
+		mid += (ah0 * bl0) as u64;
+		hi = (ah0 * bh0) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[0] = word as u32;
+		/* k = 1 */
+		lo = (al1 * bl0) as u64;
+		mid = (al1 * bh0) as u64;
+		mid += (ah1 * bl0) as u64;
+		hi = (ah1 * bh0) as u64;
+		lo += (al0 * bl1) as u64;
+		mid += (al0 * bh1) as u64;
+		mid += (ah0 * bl1) as u64;
+		hi += (ah0 * bh1) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[1] = word as u32;
+		/* k = 2 */
+		lo = (al2 * bl0) as u64;
+		mid = (al2 * bh0) as u64;
+		mid += (ah2 * bl0) as u64;
+		hi = (ah2 * bh0) as u64;
+		lo += (al1 * bl1) as u64;
+		mid += (al1 * bh1) as u64;
+		mid += (ah1 * bl1) as u64;
+		hi += (ah1 * bh1) as u64;
+		lo += (al0 * bl2) as u64;
+		mid += (al0 * bh2) as u64;
+		mid += (ah0 * bl2) as u64;
+		hi += (ah0 * bh2) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[2] = word as u32;
+		/* k = 3 */
+		lo = (al3 * bl0) as u64;
+		mid = (al3 * bh0) as u64;
+		mid += (ah3 * bl0) as u64;
+		hi = (ah3 * bh0) as u64;
+		lo += (al2 * bl1) as u64;
+		mid += (al2 * bh1) as u64;
+		mid += (ah2 * bl1) as u64;
+		hi += (ah2 * bh1) as u64;
+		lo += (al1 * bl2) as u64;
+		mid += (al1 * bh2) as u64;
+		mid += (ah1 * bl2) as u64;
+		hi += (ah1 * bh2) as u64;
+		lo += (al0 * bl3) as u64;
+		mid += (al0 * bh3) as u64;
+		mid += (ah0 * bl3) as u64;
+		hi += (ah0 * bh3) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[3] = word as u32;
+		/* k = 4 */
+		lo = (al4 * bl0) as u64;
+		mid = (al4 * bh0) as u64;
+		mid += (ah4 * bl0) as u64;
+		hi = (ah4 * bh0) as u64;
+		lo += (al3 * bl1) as u64;
+		mid += (al3 * bh1) as u64;
+		mid += (ah3 * bl1) as u64;
+		hi += (ah3 * bh1) as u64;
+		lo += (al2 * bl2) as u64;
+		mid += (al2 * bh2) as u64;
+		mid += (ah2 * bl2) as u64;
+		hi += (ah2 * bh2) as u64;
+		lo += (al1 * bl3) as u64;
+		mid += (al1 * bh3) as u64;
+		mid += (ah1 * bl3) as u64;
+		hi += (ah1 * bh3) as u64;
+		lo += (al0 * bl4) as u64;
+		mid += (al0 * bh4) as u64;
+		mid += (ah0 * bl4) as u64;
+		hi += (ah0 * bh4) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[4] = word as u32;
+		/* k = 5 */
+		lo = (al5 * bl0) as u64;
+		mid = (al5 * bh0) as u64;
+		mid += (ah5 * bl0) as u64;
+		hi = (ah5 * bh0) as u64;
+		lo += (al4 * bl1) as u64;
+		mid += (al4 * bh1) as u64;
+		mid += (ah4 * bl1) as u64;
+		hi += (ah4 * bh1) as u64;
+		lo += (al3 * bl2) as u64;
+		mid += (al3 * bh2) as u64;
+		mid += (ah3 * bl2) as u64;
+		hi += (ah3 * bh2) as u64;
+		lo += (al2 * bl3) as u64;
+		mid += (al2 * bh3) as u64;
+		mid += (ah2 * bl3) as u64;
+		hi += (ah2 * bh3) as u64;
+		lo += (al1 * bl4) as u64;
+		mid += (al1 * bh4) as u64;
+		mid += (ah1 * bl4) as u64;
+		hi += (ah1 * bh4) as u64;
+		lo += (al0 * bl5) as u64;
+		mid += (al0 * bh5) as u64;
+		mid += (ah0 * bl5) as u64;
+		hi += (ah0 * bh5) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[5] = word as u32;
+		/* k = 6 */
+		lo = (al6 * bl0) as u64;
+		mid = (al6 * bh0) as u64;
+		mid += (ah6 * bl0) as u64;
+		hi = (ah6 * bh0) as u64;
+		lo += (al5 * bl1) as u64;
+		mid += (al5 * bh1) as u64;
+		mid += (ah5 * bl1) as u64;
+		hi += (ah5 * bh1) as u64;
+		lo += (al4 * bl2) as u64;
+		mid += (al4 * bh2) as u64;
+		mid += (ah4 * bl2) as u64;
+		hi += (ah4 * bh2) as u64;
+		lo += (al3 * bl3) as u64;
+		mid += (al3 * bh3) as u64;
+		mid += (ah3 * bl3) as u64;
+		hi += (ah3 * bh3) as u64;
+		lo += (al2 * bl4) as u64;
+		mid += (al2 * bh4) as u64;
+		mid += (ah2 * bl4) as u64;
+		hi += (ah2 * bh4) as u64;
+		lo += (al1 * bl5) as u64;
+		mid += (al1 * bh5) as u64;
+		mid += (ah1 * bl5) as u64;
+		hi += (ah1 * bh5) as u64;
+		lo += (al0 * bl6) as u64;
+		mid += (al0 * bh6) as u64;
+		mid += (ah0 * bl6) as u64;
+		hi += (ah0 * bh6) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[6] = word as u32;
+		/* k = 7 */
+		lo = (al7 * bl0) as u64;
+		mid = (al7 * bh0) as u64;
+		mid += (ah7 * bl0) as u64;
+		hi = (ah7 * bh0) as u64;
+		lo += (al6 * bl1) as u64;
+		mid += (al6 * bh1) as u64;
+		mid += (ah6 * bl1) as u64;
+		hi += (ah6 * bh1) as u64;
+		lo += (al5 * bl2) as u64;
+		mid += (al5 * bh2) as u64;
+		mid += (ah5 * bl2) as u64;
+		hi += (ah5 * bh2) as u64;
+		lo += (al4 * bl3) as u64;
+		mid += (al4 * bh3) as u64;
+		mid += (ah4 * bl3) as u64;
+		hi += (ah4 * bh3) as u64;
+		lo += (al3 * bl4) as u64;
+		mid += (al3 * bh4) as u64;
+		mid += (ah3 * bl4) as u64;
+		hi += (ah3 * bh4) as u64;
+		lo += (al2 * bl5) as u64;
+		mid += (al2 * bh5) as u64;
+		mid += (ah2 * bl5) as u64;
+		hi += (ah2 * bh5) as u64;
+		lo += (al1 * bl6) as u64;
+		mid += (al1 * bh6) as u64;
+		mid += (ah1 * bl6) as u64;
+		hi += (ah1 * bh6) as u64;
+		lo += (al0 * bl7) as u64;
+		mid += (al0 * bh7) as u64;
+		mid += (ah0 * bl7) as u64;
+		hi += (ah0 * bh7) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[7] = word as u32;
+		/* k = 8 */
+		lo = (al7 * bl1) as u64;
+		mid = (al7 * bh1) as u64;
+		mid += (ah7 * bl1) as u64;
+		hi = (ah7 * bh1) as u64;
+		lo += (al6 * bl2) as u64;
+		mid += (al6 * bh2) as u64;
+		mid += (ah6 * bl2) as u64;
+		hi += (ah6 * bh2) as u64;
+		lo += (al5 * bl3) as u64;
+		mid += (al5 * bh3) as u64;
+		mid += (ah5 * bl3) as u64;
+		hi += (ah5 * bh3) as u64;
+		lo += (al4 * bl4) as u64;
+		mid += (al4 * bh4) as u64;
+		mid += (ah4 * bl4) as u64;
+		hi += (ah4 * bh4) as u64;
+		lo += (al3 * bl5) as u64;
+		mid += (al3 * bh5) as u64;
+		mid += (ah3 * bl5) as u64;
+		hi += (ah3 * bh5) as u64;
+		lo += (al2 * bl6) as u64;
+		mid += (al2 * bh6) as u64;
+		mid += (ah2 * bl6) as u64;
+		hi += (ah2 * bh6) as u64;
+		lo += (al1 * bl7) as u64;
+		mid += (al1 * bh7) as u64;
+		mid += (ah1 * bl7) as u64;
+		hi += (ah1 * bh7) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[8] = word as u32;
+		/* k = 9 */
+		lo = (al7 * bl2) as u64;
+		mid = (al7 * bh2) as u64;
+		mid += (ah7 * bl2) as u64;
+		hi = (ah7 * bh2) as u64;
+		lo += (al6 * bl3) as u64;
+		mid += (al6 * bh3) as u64;
+		mid += (ah6 * bl3) as u64;
+		hi += (ah6 * bh3) as u64;
+		lo += (al5 * bl4) as u64;
+		mid += (al5 * bh4) as u64;
+		mid += (ah5 * bl4) as u64;
+		hi += (ah5 * bh4) as u64;
+		lo += (al4 * bl5) as u64;
+		mid += (al4 * bh5) as u64;
+		mid += (ah4 * bl5) as u64;
+		hi += (ah4 * bh5) as u64;
+		lo += (al3 * bl6) as u64;
+		mid += (al3 * bh6) as u64;
+		mid += (ah3 * bl6) as u64;
+		hi += (ah3 * bh6) as u64;
+		lo += (al2 * bl7) as u64;
+		mid += (al2 * bh7) as u64;
+		mid += (ah2 * bl7) as u64;
+		hi += (ah2 * bh7) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[9] = word as u32;
+		/* k = 10 */
+		lo = (al7 * bl3) as u64;
+		mid = (al7 * bh3) as u64;
+		mid += (ah7 * bl3) as u64;
+		hi = (ah7 * bh3) as u64;
+		lo += (al6 * bl4) as u64;
+		mid += (al6 * bh4) as u64;
+		mid += (ah6 * bl4) as u64;
+		hi += (ah6 * bh4) as u64;
+		lo += (al5 * bl5) as u64;
+		mid += (al5 * bh5) as u64;
+		mid += (ah5 * bl5) as u64;
+		hi += (ah5 * bh5) as u64;
+		lo += (al4 * bl6) as u64;
+		mid += (al4 * bh6) as u64;
+		mid += (ah4 * bl6) as u64;
+		hi += (ah4 * bh6) as u64;
+		lo += (al3 * bl7) as u64;
+		mid += (al3 * bh7) as u64;
+		mid += (ah3 * bl7) as u64;
+		hi += (ah3 * bh7) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[10] = word as u32;
+		/* k = 11 */
+		lo = (al7 * bl4) as u64;
+		mid = (al7 * bh4) as u64;
+		mid += (ah7 * bl4) as u64;
+		hi = (ah7 * bh4) as u64;
+		lo += (al6 * bl5) as u64;
+		mid += (al6 * bh5) as u64;
+		mid += (ah6 * bl5) as u64;
+		hi += (ah6 * bh5) as u64;
+		lo += (al5 * bl6) as u64;
+		mid += (al5 * bh6) as u64;
+		mid += (ah5 * bl6) as u64;
+		hi += (ah5 * bh6) as u64;
+		lo += (al4 * bl7) as u64;
+		mid += (al4 * bh7) as u64;
+		mid += (ah4 * bl7) as u64;
+		hi += (ah4 * bh7) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[11] = word as u32;
+		/* k = 12 */
+		lo = (al7 * bl5) as u64;
+		mid = (al7 * bh5) as u64;
+		mid += (ah7 * bl5) as u64;
+		hi = (ah7 * bh5) as u64;
+		lo += (al6 * bl6) as u64;
+		mid += (al6 * bh6) as u64;
+		mid += (ah6 * bl6) as u64;
+		hi += (ah6 * bh6) as u64;
+		lo += (al5 * bl7) as u64;
+		mid += (al5 * bh7) as u64;
+		mid += (ah5 * bl7) as u64;
+		hi += (ah5 * bh7) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[12] = word as u32;
+		/* k = 13 */
+		lo = (al7 * bl6) as u64;
+		mid = (al7 * bh6) as u64;
+		mid += (ah7 * bl6) as u64;
+		hi = (ah7 * bh6) as u64;
+		lo += (al6 * bl7) as u64;
+		mid += (al6 * bh7) as u64;
+		mid += (ah6 * bl7) as u64;
+		hi += (ah6 * bh7) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[13] = word as u32;
+		/* k = 14 */
+		lo = (al7 * bl7) as u64;
+		mid = (al7 * bh7) as u64;
+		mid += (ah7 * bl7) as u64;
+		hi = (ah7 * bh7) as u64;
+		word = c + lo + ((mid & 0xffff) << 16);
+		c = hi + (mid >> 16) + (word >> 32);
+		out.words[14] = word as u32;
+		if c != 0 {
+			out.words[15] = c as u32;
+			out.len += 1;
+		}
+	}
+
 	fn strip(&mut self) {
 		while self.len > 1 && self.words[self.len - 1] == 0 {
 			self.len -= 1;
@@ -625,7 +991,7 @@ impl BigNum {
 		}
 	}
 
-	pub fn red_sub(&self, num: BigNum) -> BigNum {
+	pub fn red_sub(&self, num: &BigNum) -> BigNum {
 		let mut res = *self - num;
 
 		if res.negative {
@@ -635,8 +1001,16 @@ impl BigNum {
 		res
 	}
 
-	pub fn red_mul(&self, num: BigNum) -> BigNum {
-		(*self * num).red_reduce()
+	pub fn red_mul(&self, num: &BigNum) -> BigNum {
+		let mut res = *self * num;
+		res.red_reduce();
+		res
+	}
+
+	#[inline]
+	pub fn red_mul_mut(&mut self, num: &BigNum) {
+		self.mul_assign(num);
+		self.red_reduce();
 	}
 
 	pub fn red_invm(&self) -> BigNum {
@@ -687,14 +1061,18 @@ impl BigNum {
 
 		if res.negative {
 			res.negative = false;
-			res.red_reduce().red_neg()
+			res.red_reduce();
+			res.red_neg()
 		} else {
-			res.red_reduce()
+			res.red_reduce();
+			res
 		}
 	}
 
 	pub fn red_sqr(&self) -> BigNum {
-		(*self * *self).red_reduce()
+		let mut res = *self * *self;
+		res.red_reduce();
+		res
 	}
 
 	pub fn mul_k(&mut self) {
@@ -718,26 +1096,23 @@ impl BigNum {
 		self.strip();
 	}
 
-	pub fn red_reduce(mut self) -> BigNum {
+	pub fn red_reduce(&mut self) {
 		let mut high = self.split();
 
 		high.mul_k();
-		self += high;
+		self.add_assign(high);
 
 		if self.len > 8 {
 			let mut high = self.split();
 
 			high.mul_k();
-			self += high;
+			self.add_assign(high);
 		}
 
-		match self.cmp(P) {
-			Ordering::Equal => ZERO,
-			Ordering::Greater => self - P,
-			Ordering::Less => {
-				self.strip();
-				self
-			}
+		match (&*self).cmp(P) {
+			Ordering::Equal => {},
+			Ordering::Greater => self.sub_assign(P),
+			Ordering::Less => self.strip()
 		}
 	}
 }
@@ -1035,7 +1410,8 @@ mod tests {
 
 	#[test]
 	fn red_reduce() {
-		let reduced = (N * NC).red_reduce();
+		let mut reduced = (N * NC);
+		reduced.red_reduce();
 
 		let expected_bytes: &[u8] = &[
 			0x62,0x98,0xe3,0x2a,0x7e,0x39,0x64,0x3a,0x19,0x68,0x0a,0x1c,0xe9,

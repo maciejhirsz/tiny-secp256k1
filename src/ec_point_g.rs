@@ -55,7 +55,7 @@ impl ECPointG {
         res
     }
 
-    pub fn mul(&self, num: BigNum) -> ECPoint {
+    pub fn mul(&self, num: &BigNum) -> ECPoint {
         let naf = num.get_naf(1);
 
         let mut repr = [0i8; 128]; // len = max naf len / 4
@@ -82,9 +82,9 @@ impl ECPointG {
         while i > 0 {
             for (ri, rval) in repr[..rlen].iter().enumerate() {
                 if *rval == i {
-                    b = b.mixed_add(self.points[ri]);
+                    b.mixed_add(&self.points[ri]);
                 } else if *rval == -i {
-                    b = b.mixed_add(self.negpoints[ri]);
+                    b.mixed_add(&self.negpoints[ri]);
                 }
             }
 
