@@ -14,27 +14,37 @@ pub const INF: ECPoint = ECPoint {
     inf: true
 };
 
-impl Add for ECPoint {
+impl<'a> Add<&'a ECPoint> for ECPoint {
     type Output = ECPoint;
 
-    fn add(self, rhs: ECPoint) -> ECPoint {
+    fn add(mut self, rhs: &'a ECPoint) -> ECPoint {
+        self.add_assign(rhs);
+        self
+    }
+}
+
+impl<'a> AddAssign<&'a ECPoint> for ECPoint {
+    fn add_assign(&mut self, rhs: &ECPoint) {
         // O + P = P
         if self.inf {
-            return rhs;
+            *self = *rhs;
+            return;
         }
 
         // P + O = P
         if rhs.inf {
-            return self;
+            return;
         }
 
         if self.x == rhs.x {
             // P + P = 2P
             if self.y == rhs.y {
-                return self.dbl();
+                self.double();
+                return;
             }
             // P + (-P) = O
-            return INF;
+            self.inf = true;
+            return;
         }
 
         // s = (y - yp) / (x - xp)
@@ -43,19 +53,12 @@ impl Add for ECPoint {
         let mut s = self.y.red_sub(&rhs.y);
 
         if s != 0 {
-            s = s.red_mul(&self.x.red_sub(&rhs.x).red_invm())
+            s.red_mul_mut(&self.x.red_sub(&rhs.x).red_invm())
         }
 
         let nx = s.red_sqr().red_sub(&self.x).red_sub(&rhs.x);
-        let ny = s.red_mul(&self.x.red_sub(&nx)).red_sub(&self.y);
-
-        return ECPoint::new(nx, ny);
-    }
-}
-
-impl AddAssign for ECPoint {
-    fn add_assign(&mut self, rhs: ECPoint) {
-        *self = *self + rhs;
+        self.y = s.red_mul(&self.x.red_sub(&nx)).red_sub(&self.y);
+        self.x = nx;
     }
 }
 
@@ -79,24 +82,24 @@ impl ECPoint {
         return public_key;
     }
 
-    pub fn dbl(&self) -> ECPoint {
+    pub fn double(&mut self) {
         if self.inf {
-            return *self;
+            return;
         }
 
         let yy = self.y.red_add(&self.y);
 
         if yy == 0 {
-            return INF;
+            self.inf = true;
+            return;
         }
 
         let xsqr = self.x.red_sqr();
         let s = xsqr.red_add(&xsqr).red_add(&xsqr).red_mul(&yy.red_invm());
 
         let nx = s.red_sqr().red_sub(&self.x.red_add(&self.x));
-        let ny = s.red_mul(&self.x.red_sub(&nx)).red_sub(&self.y);
-
-        ECPoint::new(nx, ny)
+        self.y = s.red_mul(&self.x.red_sub(&nx)).red_sub(&self.y);
+        self.x = nx;
     }
 
 

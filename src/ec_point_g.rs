@@ -43,11 +43,11 @@ impl ECPointG {
             .iter_mut()
             .zip(res.negpoints[1..].iter_mut())
         {
-            // dstep dbls
-            acc = acc.dbl();
-            acc = acc.dbl();
-            acc = acc.dbl();
-            acc = acc.dbl();
+            // dstep doubles
+            acc.double();
+            acc.double();
+            acc.double();
+            acc.double();
             *point = acc;
             *negpoint = acc.neg();
         }
@@ -55,7 +55,7 @@ impl ECPointG {
         res
     }
 
-    pub fn mul(&self, num: &BigNum) -> ECPoint {
+    pub fn mul(&self, num: &mut BigNum) -> ECPoint {
         let naf = num.get_naf(1);
 
         let mut repr = [0i8; 128]; // len = max naf len / 4
@@ -81,14 +81,14 @@ impl ECPointG {
 
         while i > 0 {
             for (ri, rval) in repr[..rlen].iter().enumerate() {
-                if *rval == i {
+                if rval == &i {
                     b.mixed_add(&self.points[ri]);
-                } else if *rval == -i {
+                } else if rval == &-i {
                     b.mixed_add(&self.negpoints[ri]);
                 }
             }
 
-            a += b;
+            a += &b;
             i -= 1;
         }
 

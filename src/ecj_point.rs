@@ -47,20 +47,13 @@ impl From<ECJPoint> for ECPoint {
 	}
 }
 
-impl Add for ECJPoint {
+impl<'a> Add<&'a ECJPoint> for ECJPoint {
 	type Output = ECJPoint;
 
 	#[inline]
-	fn add(mut self, p: ECJPoint) -> ECJPoint {
+	fn add(mut self, p: &ECJPoint) -> ECJPoint {
 		self.add_assign(p);
 		self
-	}
-}
-
-impl AddAssign for ECJPoint {
-	#[inline]
-	fn add_assign(&mut self, rhs: ECJPoint) {
-		self.add_assign(&rhs);
 	}
 }
 
@@ -138,11 +131,9 @@ impl ECJPoint {
 		// 8M + 3S + 7A
 		let z2 = self.z.red_sqr();
 		let u1 = self.x;
-		let mut u2 = p.x;
-		u2.red_mul_mut(&z2);
+		let u2 = p.x.red_mul(&z2);
 		let s1 = self.y;
-		let mut s2 = p.y;
-		s2.red_mul_mut(&z2);
+		let mut s2 = p.y.red_mul(&z2);
 		s2.red_mul_mut(&self.z);
 
 		let h = u1.red_sub(&u2);
@@ -153,7 +144,9 @@ impl ECJPoint {
 				self.double();
 				return;
 			}
-			*self = ECJPoint::default();
+			self.x.assign_u32(1);
+			self.y.assign_u32(1);
+			self.z.assign_u32(0);
 			return;
 		}
 

@@ -15,6 +15,11 @@ impl NAF {
     }
 
     #[inline]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    #[inline]
     pub fn push(&mut self, val: i8) {
         self.data[self.len] = val;
         self.len += 1;
@@ -38,7 +43,7 @@ pub struct NAFPoints {
 }
 
 impl NAFPoints {
-    pub fn new(wnd: usize, init: ECPoint) -> NAFPoints {
+    pub fn new(wnd: usize, mut init: ECPoint) -> NAFPoints {
         let mut res = NAFPoints {
             wnd: wnd,
             points: unsafe { mem::uninitialized() },
@@ -46,10 +51,12 @@ impl NAFPoints {
         };
 
         res.points[0] = init;
-        let dbl = init.dbl();
+        let mut double = init;
+        double.double();
 
-        for i in 1..res.len {
-            res.points[i] = res.points[i - 1] + dbl;
+        for point in &mut res.points[1..res.len] {
+            init += &double;
+            *point = init;
         }
 
         res

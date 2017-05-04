@@ -1,7 +1,7 @@
 use core::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Shr, ShrAssign};
 use core::fmt::{self, Debug};
 use core::cmp::Ordering;
-use core::str;
+use core::{str, mem};
 use naf::NAF;
 
 #[derive(Copy, Clone, Eq)]
@@ -46,7 +46,6 @@ impl Debug for BigNum {
 }
 
 impl PartialEq for BigNum {
-
 	fn eq(&self, other: &BigNum) -> bool {
 		self.negative == other.negative && self.words() == other.words()
 	}
@@ -71,28 +70,24 @@ impl Ord for BigNum {
 }
 
 impl PartialOrd for BigNum {
-
 	fn partial_cmp(&self, other: &BigNum) -> Option<Ordering> {
 		Some(self.cmp(other))
 	}
 }
 
 impl PartialEq<u32> for BigNum {
-
 	fn eq(&self, other: &u32) -> bool {
 		self.len == 1 && self.words[0] == *other
 	}
 }
 
 impl<'a> PartialEq<u32> for &'a BigNum {
-
 	fn eq(&self, other: &u32) -> bool {
 		self.len == 1 && self.words[0] == *other
 	}
 }
 
 impl PartialOrd<u32> for BigNum {
-
 	fn partial_cmp(&self, other: &u32) -> Option<Ordering> {
 		if self.len > 1 {
 			return Some(Ordering::Greater);
@@ -166,6 +161,7 @@ impl<'a> AddAssign<&'a BigNum> for BigNum {
 impl Add<u32> for BigNum {
 	type Output = BigNum;
 
+	#[inline]
 	fn add(mut self, rhs: u32) -> Self {
 		self += rhs;
 		self
@@ -195,6 +191,7 @@ impl AddAssign<u32> for BigNum {
 impl<'a> Sub<&'a BigNum> for BigNum {
 	type Output = BigNum;
 
+	#[inline]
 	fn sub(mut self, rhs: &BigNum) -> Self {
 		self.sub_assign(rhs);
 		self
@@ -280,6 +277,11 @@ impl<'a> MulAssign<&'a BigNum> for BigNum {
 			return;
 		}
 
+		if rhs.len == 1 {
+			self.mul(rhs.words[0]);
+			return;
+		}
+
 		let mut res = BigNum {
 			negative: false,
 			words: [0; 16],
@@ -324,6 +326,7 @@ impl<'a> MulAssign<&'a BigNum> for BigNum {
 impl Mul<u32> for BigNum {
 	type Output = BigNum;
 
+	#[inline]
 	fn mul(mut self, rhs: u32) -> BigNum {
 		self *= rhs;
 		self
@@ -377,7 +380,7 @@ impl ShrAssign<u32> for BigNum {
 	}
 }
 
-
+#[inline]
 fn read_u32(buf: &[u8]) -> u32 {
 	assert!(buf.len() == 4);
 
@@ -385,7 +388,7 @@ fn read_u32(buf: &[u8]) -> u32 {
 	u32::from_be(unsafe { *(buf.as_ptr() as *const u32) })
 }
 
-
+#[inline]
 fn write_u32(val: u32, buf: &mut [u8]) {
 	assert!(buf.len() == 4);
 
@@ -795,39 +798,48 @@ impl BigNum {
 		}
 	}
 
+	#[inline]
+	pub fn assign_u32(&mut self, num: u32) {
+		self.negative = false;
+		self.words[0] = num;
+		self.len = 1;
+	}
+
+	#[inline]
 	fn strip(&mut self) {
 		while self.len > 1 && self.words[self.len - 1] == 0 {
 			self.len -= 1;
 		}
 	}
 
+	#[inline]
 	fn words(&self) -> &[u32] {
 		&self.words[..self.len]
 	}
 
-
+	#[inline]
 	fn words_mut(&mut self) -> &mut [u32] {
 		&mut self.words[..self.len]
 	}
 
-
+	#[inline]
 	fn norm_sign(&mut self) {
 		if self.len == 0 && self.words[0] == 0 {
 			self.negative = false;
 		}
 	}
 
-
+	#[inline]
 	pub fn is_overflow(&self) -> bool {
-		self >= &N
+		self >= N
 	}
 
-
+	#[inline]
 	pub fn is_even(&self) -> bool {
 		self.words[0] & 1 == 0
 	}
 
-
+	#[inline]
 	pub fn is_odd(&self) -> bool {
 		self.words[0] & 1 == 1
 	}
@@ -874,6 +886,40 @@ impl BigNum {
 			self.words[self.len] = carry as u32;
 			self.len += 1;
 		}
+	}
+
+	pub fn get_naf1(&self) -> NAF {
+		let mut naf = NAF::new();
+
+		let mut k = *self;
+
+		while k != 0 {
+			let zeros = k.words[0].trailing_zeros();
+
+			if zeros != 0 {
+				naf.push_zeros(zeros as usize);
+				k >>= zeros;
+				continue;
+			}
+
+			let m = (k.words[0] as i32) & 3;
+
+			if m == 3 {
+				naf.push(-1);
+
+				k += 1;
+				k >>= 1;
+			} else {
+				naf.push(m as i8);
+				k.words[0] -= m as u32;
+
+				if k != 0 {
+					k >>= 1;
+				}
+			}
+		}
+
+		naf
 	}
 
 	pub fn get_naf(&self, w: u8) -> NAF {
@@ -970,24 +1016,17 @@ impl BigNum {
 		self.red_reduce();
 	}
 
-	#[inline]
-	pub fn sqr(&mut self) {
-		let other = self as *mut BigNum as *const BigNum;
-		self.mul_assign(unsafe { &*other });
-	}
-
-	pub fn red_invm(&self) -> BigNum {
-		let mut a = *self;
+	pub fn red_invm(mut self) -> BigNum {
 		let mut b = *P;
 
 		let mut x1 = ONE;
 		let mut x2 = ZERO;
 
-		while a > 1 && b > 1 {
-			let a_zeros = a.words[0].trailing_zeros();
+		while self > 1 && b > 1 {
+			let a_zeros = self.words[0].trailing_zeros();
 
 			if a_zeros != 0 {
-				a >>= a_zeros;
+				self >>= a_zeros;
 				for _ in 0..a_zeros {
 					if x1.is_odd() {
 						x1 += P;
@@ -1007,28 +1046,32 @@ impl BigNum {
 				}
 			}
 
-			if a >= b {
-				a -= &b;
+			if self >= b {
+				self -= &b;
 				x1 -= &x2;
 			} else {
-				b -= &a;
+				b -= &self;
 				x2 -= &x1;
 			}
 		}
 
-		let mut res = if a == 1 { x1 } else { x2 };
-
-		if res.negative {
-			res += P;
+		if self == 1 {
+			self = x1;
+		} else {
+			self = x2;
 		}
 
-		if res.negative {
-			res.negative = false;
-			res.red_reduce();
-			res.red_neg()
+		if self.negative {
+			self += P;
+		}
+
+		if self.negative {
+			self.negative = false;
+			self.red_reduce();
+			self.red_neg()
 		} else {
-			res.red_reduce();
-			res
+			self.red_reduce();
+			self
 		}
 	}
 
@@ -1093,7 +1136,7 @@ pub const ONE: BigNum = BigNum {
 };
 
 // FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-pub const N: BigNum = BigNum {
+pub static N: &'static BigNum = &BigNum {
 	negative: false,
 	len: 8,
 	words: [
@@ -1110,7 +1153,7 @@ pub const N: BigNum = BigNum {
 };
 
 // 7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0
-pub const NH: BigNum = BigNum {
+pub static NH: &'static BigNum = &BigNum {
 	negative: false,
 	len: 8,
 	words: [
@@ -1127,7 +1170,7 @@ pub const NH: BigNum = BigNum {
 };
 
 // 000000000000000000000000000000014551231950B75FC4402DA1732FC9BEBF
-pub const NC: BigNum = BigNum {
+pub static NC: &'static BigNum = &BigNum {
 	negative: false,
 	len: 5,
 	words: [
@@ -1161,7 +1204,7 @@ pub static P: &'static BigNum = &BigNum {
 };
 
 // P - N = 000000000000000000000000000000014551231950b75fc4402da1722fc9baee,
-pub const PSN: BigNum = BigNum {
+pub static PSN: &'static BigNum = &BigNum {
 	negative: false,
 	len: 5,
 	words: [
@@ -1183,10 +1226,10 @@ mod tests {
 
 	#[test]
 	fn big_num_add_big_num() {
-		let n = NC + &NC;
+		let n = *NC + NC;
 
-		let mut nm = NC;
-		nm += &NC;
+		let mut nm = *NC;
+		nm += NC;
 
 		let expected_bytes: &[u8] = &[
 			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -1200,7 +1243,7 @@ mod tests {
 
 	#[test]
 	fn big_num_sub_big_num() {
-		let n = *P - &NC;
+		let n = *P - NC;
 
 		let expected_bytes: &[u8] = &[
 			0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
@@ -1213,7 +1256,7 @@ mod tests {
 
 	#[test]
 	fn big_num_sub_big_num_negative() {
-		let n = ONE - &NC;
+		let n = ONE - NC;
 
 		let expected_bytes: &[u8] = &[
 			0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -1228,9 +1271,9 @@ mod tests {
 
 	#[test]
 	fn big_num_shr() {
-		let n = NC >> 7;
+		let n = *NC >> 7;
 
-		let mut nm = NC;
+		let mut nm = *NC;
 		nm >>= 7;
 
 		let expected_bytes: &[u8] = &[
@@ -1255,15 +1298,15 @@ mod tests {
 		let bn = BigNum::from(bytes);
 		bn.write_bytes_to(&mut roundtrip);
 
-		assert_eq!(bn, N);
+		assert_eq!(&bn, N);
 		assert_eq!(bytes, roundtrip);
 	}
 
 	#[test]
 	fn produces_valid_nh() {
-		let nh = N >> 1;
+		let nh = *N >> 1;
 
-		assert_eq!(nh, NH);
+		assert_eq!(&nh, NH);
 	}
 
 	#[test]
@@ -1278,7 +1321,7 @@ mod tests {
 		let bn = BigNum::from(bytes);
 		bn.write_bytes_to(&mut roundtrip);
 
-		assert_eq!(bn, NC);
+		assert_eq!(&bn, NC);
 		assert_eq!(bytes, roundtrip);
 	}
 
@@ -1302,7 +1345,7 @@ mod tests {
 	fn produces_valid_psn() {
 		let psn = *P - &N;
 
-		assert_eq!(psn, PSN);
+		assert_eq!(&psn, PSN);
 	}
 
 	#[test]
@@ -1328,8 +1371,8 @@ mod tests {
 
 	#[test]
 	fn is_overflow() {
-		let np1 = N + &BigNum::from(1);
-		let ns1 = N - &BigNum::from(1);
+		let np1 = *N + &BigNum::from(1);
+		let ns1 = *N - &BigNum::from(1);
 
 		assert_eq!(np1.is_overflow(), true);
 		assert_eq!(N.is_overflow(), true);
@@ -1338,7 +1381,7 @@ mod tests {
 
 	#[test]
 	fn multiply() {
-		let mut low = (N * &NC);
+		let mut low = (*N * NC);
 		let high = low.split();
 
 		let expected_bytes: &[u8] = &[
@@ -1359,7 +1402,7 @@ mod tests {
 
 	#[test]
 	fn mul_k() {
-		let mut n = NC;
+		let mut n = *NC;
 		n.mul_k();
 
 		let expected_bytes: &[u8] = &[
@@ -1373,7 +1416,7 @@ mod tests {
 
 	#[test]
 	fn red_reduce() {
-		let mut reduced = (N * &NC);
+		let mut reduced = (*N * NC);
 		reduced.red_reduce();
 
 		let expected_bytes: &[u8] = &[
@@ -1413,7 +1456,7 @@ mod tests {
 
 	#[test]
 	fn n_sub_one() {
-		let bn = N - &BigNum::from(1);
+		let bn = *N - &BigNum::from(1);
 
 		let expected_bytes: &[u8] = &[
 			0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,

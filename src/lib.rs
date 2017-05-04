@@ -21,13 +21,13 @@ pub fn is_valid_secret(bytes: &[u8]) -> bool {
 }
 
 pub fn create_public_key(g: &ECPointG, secret: &[u8]) -> Option<[u8; 65]> {
-    let num = BigNum::from(secret);
+    let mut num = BigNum::from(secret);
 
     if num.is_overflow() || num == 0 {
         return None;
     }
 
-    Some(g.mul(&num).to_public_key())
+    Some(g.mul(&mut num).to_public_key())
 }
 
 #[cfg(test)]
