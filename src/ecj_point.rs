@@ -144,9 +144,9 @@ impl ECJPoint {
 				self.double();
 				return;
 			}
-			self.x.assign_u32(1);
-			self.y.assign_u32(1);
-			self.z.assign_u32(0);
+			self.x = big_num::ONE;
+			self.y = big_num::ONE;
+			self.z = big_num::ZERO;
 			return;
 		}
 

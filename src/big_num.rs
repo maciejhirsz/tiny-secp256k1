@@ -799,13 +799,6 @@ impl BigNum {
 	}
 
 	#[inline]
-	pub fn assign_u32(&mut self, num: u32) {
-		self.negative = false;
-		self.words[0] = num;
-		self.len = 1;
-	}
-
-	#[inline]
 	fn strip(&mut self) {
 		while self.len > 1 && self.words[self.len - 1] == 0 {
 			self.len -= 1;
