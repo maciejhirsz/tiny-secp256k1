@@ -1,6 +1,50 @@
 use ec_point::{ECPoint, INF};
 use core::mem;
 
+pub struct NAFRepr {
+    data: [i8; 128],
+    cur: usize,
+    bit: usize,
+}
+
+impl NAFRepr {
+    pub fn new() -> Self {
+        NAFRepr {
+            data: [0; 128],
+            cur: 0,
+            bit: 0,
+        }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.cur + if self.bit != 0 { 1 } else { 0 }
+    }
+
+    #[inline]
+    pub fn push(&mut self, val: i8) {
+        self.data[self.cur] |= val << self.bit;
+        self.bit += 1;
+
+        if self.bit == 4 {
+            self.bit = 0;
+            self.cur += 1;
+        }
+    }
+
+    #[inline]
+    pub fn push_zeros(&mut self, mut count: usize) {
+        count += self.bit;
+        self.cur += count / 4;
+        self.bit = count % 4;
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[i8] {
+        &self.data[..self.len()]
+    }
+}
+
 pub struct NAF {
     data: [i8; 512],
     len: usize

@@ -130,14 +130,12 @@ impl ECJPoint {
 		//   with p.z = 1
 		// 8M + 3S + 7A
 		let z2 = self.z.red_sqr();
-		let u1 = self.x;
 		let u2 = p.x.red_mul(&z2);
-		let s1 = self.y;
 		let mut s2 = p.y.red_mul(&z2);
 		s2.red_mul_mut(&self.z);
 
-		let h = u1.red_sub(&u2);
-		let r = s1.red_sub(&s2);
+		let h = self.x.red_sub(&u2);
+		let r = self.y.red_sub(&s2);
 
 		if h == 0 {
 			if r == 0 {
@@ -151,11 +149,11 @@ impl ECJPoint {
 		}
 
 		let h2 = h.red_sqr();
-		let v = u1.red_mul(&h2);
+		let v = self.x.red_mul(&h2);
 		let h3 = h2.red_mul(&h);
 
-		self.x = r.red_sqr().red_add(&h3).red_sub(&v).red_sub(&v);
-		self.y = r.red_mul(&v.red_sub(&self.x)).red_sub(&s1.red_mul(&h3));
+		self.x = r.red_sqr().red_add(&h3).red_sub_twice(&v);
+		self.y = r.red_mul(&v.red_sub(&self.x)).red_sub(&self.y.red_mul(&h3));
 		self.z.red_mul_mut(&h);
 	}
 

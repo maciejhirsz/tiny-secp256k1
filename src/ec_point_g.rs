@@ -56,22 +56,8 @@ impl ECPointG {
     }
 
     pub fn mul(&self, num: &mut BigNum) -> ECPoint {
-        let naf = num.get_naf(1);
-
-        let mut repr = [0i8; 128]; // len = max naf len / 4
-        let mut rlen = 0;
-
-        for c in naf.as_slice().chunks(4) {
-            // values in chunk are -1, 0 or 1
-            repr[rlen] = match c.len() {
-                4 => (c[3] << 3) + (c[2] << 2) + (c[1] << 1) + c[0],
-                3 => (c[2] << 2) + (c[1] << 1) + c[0],
-                2 => (c[1] << 1) + c[0],
-                1 => c[0],
-                _ => unreachable!()
-            };
-            rlen += 1;
-        }
+        let naf = num.get_naf1();
+        let repr = naf.as_slice();
 
         let mut a = ECJPoint::default();
         let mut b = ECJPoint::default();
@@ -80,7 +66,7 @@ impl ECPointG {
         let mut i = 10;
 
         while i > 0 {
-            for (ri, rval) in repr[..rlen].iter().enumerate() {
+            for (ri, rval) in repr.iter().enumerate() {
                 if rval == &i {
                     b.mixed_add(&self.points[ri]);
                 } else if rval == &-i {

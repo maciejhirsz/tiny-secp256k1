@@ -7,8 +7,7 @@ mod ec_point_g;
 mod ecj_point;
 
 pub use ec_point_g::ECPointG;
-
-use big_num::BigNum;
+pub use big_num::BigNum;
 
 pub fn is_valid_secret(bytes: &[u8]) -> bool {
     if bytes.len() != 32 {

@@ -2,7 +2,7 @@ use core::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Shr, ShrAssign};
 use core::fmt::{self, Debug};
 use core::cmp::Ordering;
 use core::{str, mem};
-use naf::NAF;
+use naf::{NAF, NAFRepr};
 
 #[derive(Copy, Clone, Eq)]
 pub struct BigNum {
@@ -433,6 +433,11 @@ impl From<u32> for BigNum {
 			]
 		}
 	}
+}
+
+#[inline]
+pub fn min(a: u64, b: u64) -> u32 {
+	a < b { a } else { b }
 }
 
 impl BigNum {
@@ -881,10 +886,37 @@ impl BigNum {
 		}
 	}
 
-	pub fn get_naf1(&self) -> NAF {
-		let mut naf = NAF::new();
+	pub fn get_naf1(&self) -> NAFRepr {
+		let mut naf = NAFRepr::new();
 
 		let mut k = *self;
+
+		let mut chunk = ((k.words[1] as u64) << 32) | k.words[0];
+		let mut shifts = 0;
+
+		while shifts < 32 {
+			let zeros = min(chunk.trailing_zeros(), 32 - shifts);
+
+			if zeros != 0 {
+				naf.push_zeros(zeros as usize);
+				chunk >>= zeros;
+				shifts += zeros;
+				continue;
+			}
+
+			let m = (chunk as i8) & 3;
+
+			if m == 3 {
+				naf.push(-1);
+				chunk += 1;
+			} else {
+				naf.push(m);
+				chunk -= m as u32;
+			}
+
+			chunk >>= 1;
+			shifts += 1;
+		}
 
 		while k != 0 {
 			let zeros = k.words[0].trailing_zeros();
@@ -899,9 +931,9 @@ impl BigNum {
 
 			if m == 3 {
 				naf.push(-1);
-
+				naf.push_zeros(1);
 				k += 1;
-				k >>= 1;
+				k >>= 2;
 			} else {
 				naf.push(m as i8);
 				k.words[0] -= m as u32;
@@ -985,6 +1017,17 @@ impl BigNum {
 		if &*self >= P {
 			self.sub_assign(P);
 		}
+	}
+
+	pub fn red_sub_twice(&self, num: &BigNum) -> BigNum {
+		let mut res = *self - num;
+		res -= num;
+
+		while res.negative {
+			res += P;
+		}
+
+		res
 	}
 
 	pub fn red_sub(&self, num: &BigNum) -> BigNum {

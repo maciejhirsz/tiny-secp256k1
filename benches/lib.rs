@@ -2,8 +2,10 @@
 
 extern crate tiny_secp256k1;
 extern crate test;
+extern crate secp256k1;
 
-use tiny_secp256k1::{ECPointG, create_public_key};
+use tiny_secp256k1::{ECPointG, create_public_key, BigNum};
+use secp256k1::{Secp256k1, key};
 
 use test::Bencher;
 
@@ -26,4 +28,19 @@ fn secret_to_public(b: &mut Bencher) {
     b.iter(|| {
         create_public_key(&g, secret)
     });
+}
+
+#[bench]
+fn secret_to_public_other(b: &mut Bencher) {
+    let ctx = Secp256k1::new();
+    let secret: &[u8] = &[
+        0x32, 0x79, 0xe8, 0x0c, 0xb3, 0x93, 0x5c, 0x68, 0xdc, 0xf3, 0x71, 0xb9,
+        0xee, 0x21, 0x78, 0x73, 0x84, 0xba, 0xee, 0x63, 0xd6, 0x49, 0x0b, 0x17,
+        0x39, 0x27, 0x10, 0xc8, 0x76, 0xb1, 0xa8, 0x6b
+    ];
+
+    b.iter(|| {
+        let s = key::SecretKey::from_slice(&ctx, secret).unwrap();
+        key::PublicKey::from_secret_key(&ctx, &s).unwrap();
+    })
 }
