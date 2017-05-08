@@ -7,4 +7,4 @@ repository = "https://github.com/maciejhirsz/tiny-secp256k1"
 description = "A pure-Rust `no_std` implementation of Secp256k1. A primary goal for this crate is having a working solution that can be easily compiled to WebAssembly."
 
 [dev-dependencies]
-secp256k1 = "*"
+secp256k1 = "0.6"
