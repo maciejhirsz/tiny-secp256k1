@@ -4,7 +4,7 @@ extern crate tiny_secp256k1;
 extern crate test;
 extern crate secp256k1;
 
-use tiny_secp256k1::{ECPointG, create_public_key, BigNum};
+use tiny_secp256k1::{ECPointG, create_public_key};
 use secp256k1::{Secp256k1, key};
 
 use test::Bencher;

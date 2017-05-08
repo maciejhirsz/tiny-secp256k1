@@ -70,35 +70,35 @@ impl<'a> AddAssign<&'a ECJPoint> for ECJPoint {
 			return;
 		}
 
-	  	// http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-add-1998-cmo-2
-  		// 12M + 4S + 7A
-  		let pz2 = p.z.red_sqr();
-  		let z2 = self.z.red_sqr();
-  		let u1 = self.x.red_mul(&pz2);
-  		let u2 = p.x.red_mul(&z2);
-  		let s1 = self.y.red_mul(&pz2).red_mul(&p.z);
-  		let s2 = p.y.red_mul(&z2).red_mul(&self.z);
+		// http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-add-1998-cmo-2
+		// 12M + 4S + 7A
+		let pz2 = p.z.red_sqr();
+		let z2 = self.z.red_sqr();
+		let u1 = self.x.red_mul(&pz2);
+		let u2 = p.x.red_mul(&z2);
+		let s1 = self.y.red_mul(&pz2).red_mul(&p.z);
+		let s2 = p.y.red_mul(&z2).red_mul(&self.z);
 
-  		let h = u1.red_sub(&u2);
-  		let r = s1.red_sub(&s2);
+		let h = u1.red_sub(&u2);
+		let r = s1.red_sub(&s2);
 
-  		if h == 0 {
-  			if r == 0 {
-  				self.double();
-  				return;
-  			}
+		if h == 0 {
+			if r == 0 {
+				self.double();
+				return;
+			}
 
-  			*self = ECJPoint::default();
-  			return;
-  		}
+			*self = ECJPoint::default();
+			return;
+		}
 
-  		let h2 = h.red_sqr();
-  		let v = u1.red_mul(&h2);
-  		let h3 = h2.red_mul(&h);
+		let h2 = h.red_sqr();
+		let v = u1.red_mul(&h2);
+		let h3 = h2.red_mul(&h);
 
-  		self.x = r.red_sqr().red_add(&h3).red_sub(&v).red_sub(&v);
-  		self.y = r.red_mul(&v.red_sub(&self.x)).red_sub(&s1.red_mul(&h3));
-  		self.z = self.z.red_mul(&p.z).red_mul(&h);
+		self.x = r.red_sqr().red_add(&h3).red_sub(&v).red_sub(&v);
+		self.y = r.red_mul(&v.red_sub(&self.x)).red_sub(&s1.red_mul(&h3));
+		self.z = self.z.red_mul(&p.z).red_mul(&h);
 	}
 }
 
@@ -165,44 +165,44 @@ impl ECJPoint {
 		let mut nz;
 
 		if self.z == 1 {
-		    // http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#doubling-mdbl-2007-bl
-		    // 1M + 5S + 6A + 3*2 + 1*3 + 1*8
-		    let xx = self.x.red_sqr();
-		    let yy = self.y.red_sqr();
-		    let yyyy = yy.red_sqr();
-		    let mut s = self.x.red_add(&yy).red_sqr().red_sub(&xx).red_sub(&yyyy);
-		    s.red_double();
-		    let m = xx.red_add(&xx).red_add(&xx);
-		    let t = m.red_sqr().red_sub(&s).red_sub(&s);
+			// http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#doubling-mdbl-2007-bl
+			// 1M + 5S + 6A + 3*2 + 1*3 + 1*8
+			let xx = self.x.red_sqr();
+			let yy = self.y.red_sqr();
+			let yyyy = yy.red_sqr();
+			let mut s = self.x.red_add(&yy).red_sqr().red_sub(&xx).red_sub(&yyyy);
+			s.red_double();
+			let m = xx.red_add(&xx).red_add(&xx);
+			let t = m.red_sqr().red_sub(&s).red_sub(&s);
 
-		    let mut yyyy8 = yyyy;
-		    yyyy8.red_double(); // x2
-		    yyyy8.red_double(); // x4
-		    yyyy8.red_double(); // x8
+			let mut yyyy8 = yyyy;
+			yyyy8.red_double(); // x2
+			yyyy8.red_double(); // x4
+			yyyy8.red_double(); // x8
 
-		    nx = t;
-		    ny = m.red_mul(&s.red_sub(&t)).red_sub(&yyyy8);
-		    nz = self.y.red_add(&self.y);
+			nx = t;
+			ny = m.red_mul(&s.red_sub(&t)).red_sub(&yyyy8);
+			nz = self.y.red_add(&self.y);
 		} else {
-		    // http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#doubling-dbl-2009-l
-    		// 2M + 5S + 6A + 3*2 + 1*3 + 1*8
-    		let a = self.x.red_sqr();
-    		let b = self.y.red_sqr();
-    		let c = b.red_sqr();
-    		let mut d = self.x.red_add(&b).red_sqr().red_sub(&a).red_sub(&c);
-    		d.red_double();
-    		let e = a.red_add(&a).red_add(&a);
-    		let f = e.red_sqr();
+			// http://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#doubling-dbl-2009-l
+			// 2M + 5S + 6A + 3*2 + 1*3 + 1*8
+			let a = self.x.red_sqr();
+			let b = self.y.red_sqr();
+			let c = b.red_sqr();
+			let mut d = self.x.red_add(&b).red_sqr().red_sub(&a).red_sub(&c);
+			d.red_double();
+			let e = a.red_add(&a).red_add(&a);
+			let f = e.red_sqr();
 
-    		let mut c8 = c;
-    		c8.red_double(); // x2
-    		c8.red_double(); // x4
-    		c8.red_double(); // x8
+			let mut c8 = c;
+			c8.red_double(); // x2
+			c8.red_double(); // x4
+			c8.red_double(); // x8
 
-    		nx = f.red_sub(&d).red_sub(&d);
-    		ny = e.red_mul(&d.red_sub(&nx)).red_sub(&c8);
-    		nz = self.y.red_mul(&self.z);
-    		nz = nz.red_add(&nz);
+			nx = f.red_sub(&d).red_sub(&d);
+			ny = e.red_mul(&d.red_sub(&nx)).red_sub(&c8);
+			nz = self.y.red_mul(&self.z);
+			nz = nz.red_add(&nz);
 		}
 
 		self.x = nx;

@@ -1,8 +1,8 @@
 use core::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Shr, ShrAssign};
 use core::fmt::{self, Debug};
 use core::cmp::Ordering;
-use core::{str, mem};
-use naf::{NAF, NAFRepr};
+use core::str;
+use naf::NAF;
 
 #[derive(Copy, Clone, Eq)]
 pub struct BigNum {
@@ -335,7 +335,7 @@ impl Mul<u32> for BigNum {
 
 impl MulAssign<u32> for BigNum {
 	fn mul_assign(&mut self, rhs: u32) {
-		let mut mul_carry = 0;
+		let mut mul_carry;
 		let mut carry = 0;
 
 		for word in self.words_mut() {
@@ -866,7 +866,6 @@ impl BigNum {
 	}
 
 	pub fn double(&mut self) {
-		let mut i = 0;
 		let mut carry = 0u64;
 
 		for word in self.words_mut() {
@@ -879,40 +878,6 @@ impl BigNum {
 			self.words[self.len] = carry as u32;
 			self.len += 1;
 		}
-	}
-
-	pub fn get_naf1(&self) -> NAFRepr {
-		let mut naf = NAFRepr::new();
-
-		let mut k = *self;
-
-		while k != 0 {
-			let zeros = k.words[0].trailing_zeros();
-
-			if zeros != 0 {
-				naf.push_zeros(zeros as usize);
-				k >>= zeros;
-				continue;
-			}
-
-			let m = (k.words[0] as i32) & 3;
-
-			if m == 3 {
-				naf.push(-1);
-				naf.push_zeros(1);
-				k += 1;
-				k >>= 2;
-			} else {
-				naf.push(m as i8);
-				k.words[0] -= m as u32;
-
-				if k != 0 {
-					k >>= 1;
-				}
-			}
-		}
-
-		naf
 	}
 
 	pub fn get_naf(&self, w: u8) -> NAF {
@@ -1385,7 +1350,7 @@ mod tests {
 
 	#[test]
 	fn multiply() {
-		let mut low = (*N * NC);
+		let mut low = *N * NC;
 		let high = low.split();
 
 		let expected_bytes: &[u8] = &[
@@ -1420,7 +1385,7 @@ mod tests {
 
 	#[test]
 	fn red_reduce() {
-		let mut reduced = (*N * NC);
+		let mut reduced = *N * NC;
 		reduced.red_reduce();
 
 		let expected_bytes: &[u8] = &[
