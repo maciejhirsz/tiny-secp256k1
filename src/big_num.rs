@@ -435,11 +435,6 @@ impl From<u32> for BigNum {
 	}
 }
 
-#[inline]
-pub fn min(a: u64, b: u64) -> u32 {
-	a < b { a } else { b }
-}
-
 impl BigNum {
 	fn mul8x8(&mut self, rhs: &BigNum) {
 		let mut c = 0;
@@ -890,33 +885,6 @@ impl BigNum {
 		let mut naf = NAFRepr::new();
 
 		let mut k = *self;
-
-		let mut chunk = ((k.words[1] as u64) << 32) | k.words[0];
-		let mut shifts = 0;
-
-		while shifts < 32 {
-			let zeros = min(chunk.trailing_zeros(), 32 - shifts);
-
-			if zeros != 0 {
-				naf.push_zeros(zeros as usize);
-				chunk >>= zeros;
-				shifts += zeros;
-				continue;
-			}
-
-			let m = (chunk as i8) & 3;
-
-			if m == 3 {
-				naf.push(-1);
-				chunk += 1;
-			} else {
-				naf.push(m);
-				chunk -= m as u32;
-			}
-
-			chunk >>= 1;
-			shifts += 1;
-		}
 
 		while k != 0 {
 			let zeros = k.words[0].trailing_zeros();
