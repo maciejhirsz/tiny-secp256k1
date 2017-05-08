@@ -3,6 +3,7 @@ name = "tiny-secp256k1"
 version = "0.1.0"
 authors = ["maciejhirsz <maciej.hirsz@gmail.com>"]
 license = "MIT"
+repository = "https://github.com/maciejhirsz/tiny-secp256k1"
 
 [dev-dependencies]
 secp256k1 = "*"
